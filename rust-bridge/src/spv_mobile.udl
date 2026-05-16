@@ -1,0 +1,164 @@
+namespace spv_mobile {
+
+    // --- Wallet ---
+    [Throws=SpvError]
+    string generate_mnemonic();
+
+    [Throws=SpvError]
+    string mnemonic_to_seed([ByRef] string mnemonic, [ByRef] string passphrase);
+
+    [Throws=SpvError]
+    string derive_address([ByRef] string seed_hex, u32 index);
+
+    [Throws=SpvError]
+    string derive_privkey_hex([ByRef] string seed_hex, u32 index);
+
+    boolean validate_address([ByRef] string address);
+
+    [Throws=SpvError]
+    string export_wif([ByRef] string seed_hex, u32 index);
+
+    [Throws=SpvError]
+    WifKey import_wif([ByRef] string wif);
+
+    // --- Transaction building ---
+    [Throws=SpvError]
+    string build_send_tx(sequence<Utxo> utxos, [ByRef] string to_address,
+                         u64 amount_sats, u64 fee_sats,
+                         [ByRef] string seed_hex, u32 from_index);
+
+    // --- HTLC (settlement) ---
+    [Throws=SpvError]
+    string encode_htlcv1([ByRef] string secret_hash_hex, [ByRef] string recipient_address,
+                         [ByRef] string refund_address, u64 timeout_height);
+
+    [Throws=SpvError]
+    HtlcInfo decode_htlcv1([ByRef] string script_hex);
+
+    [Throws=SpvError]
+    string build_htlc_claim_tx([ByRef] string htlc_txid, u32 htlc_index, u64 htlc_value,
+                               [ByRef] string htlc_script_hex, [ByRef] string preimage_hex,
+                               [ByRef] string seed_hex, u32 key_index,
+                               [ByRef] string to_address, u64 fee_sats);
+
+    [Throws=SpvError]
+    string build_htlc_refund_tx([ByRef] string htlc_txid, u32 htlc_index, u64 htlc_value,
+                                [ByRef] string htlc_script_hex, [ByRef] string seed_hex,
+                                u32 key_index, [ByRef] string to_address, u64 fee_sats,
+                                u64 timeout_height);
+
+    // --- Agreement (settlement wizard) ---
+    [Throws=SpvError]
+    string compute_agreement_hash([ByRef] string agreement_json);
+
+    [Throws=SpvError]
+    string create_agreement(AgreementParams params);
+
+    // --- SPV header chain ---
+    [Throws=SpvError]
+    boolean verify_merkle_proof([ByRef] string txid_hex, [ByRef] string merkle_root_hex,
+                                sequence<string> proof_hex_nodes, u64 index);
+
+    u64 get_synced_height();
+    string get_tip_hash();
+
+    // --- RPC client ---
+    [Throws=SpvError]
+    NodeStatus rpc_get_status([ByRef] string rpc_url, string? auth_token);
+
+    [Throws=SpvError]
+    BalanceInfo rpc_get_balance([ByRef] string rpc_url, string? auth_token, [ByRef] string address);
+
+    [Throws=SpvError]
+    sequence<Utxo> rpc_get_utxos([ByRef] string rpc_url, string? auth_token, [ByRef] string address);
+
+    [Throws=SpvError]
+    sequence<TxRecord> rpc_get_history([ByRef] string rpc_url, string? auth_token, [ByRef] string address);
+
+    [Throws=SpvError]
+    u64 rpc_get_fee_rate([ByRef] string rpc_url, string? auth_token);
+
+    [Throws=SpvError]
+    string rpc_submit_tx([ByRef] string rpc_url, string? auth_token, [ByRef] string tx_hex);
+
+    // --- P2P light client ---
+    [Throws=SpvError]
+    void start_light_client(LightClientConfig config);
+
+    void stop_light_client();
+    boolean is_syncing();
+    u32 peer_count();
+
+    [Throws=SpvError]
+    string broadcast_tx([ByRef] string tx_hex);
+};
+
+[Error]
+enum SpvError {
+    "InvalidArgument",
+    "Network",
+    "Rpc",
+    "Wallet",
+    "Parse",
+    "Internal",
+};
+
+dictionary Utxo {
+    string txid;
+    u32 index;
+    u64 value;
+    u64 height;
+    boolean is_coinbase;
+    string script_pubkey_hex;
+};
+
+dictionary BalanceInfo {
+    u64 confirmed;
+    u32 utxo_count;
+    u64 height;
+};
+
+dictionary NodeStatus {
+    u64 height;
+    u32 peer_count;
+    string tip_hash;
+    boolean anchor_loaded;
+};
+
+dictionary TxRecord {
+    string txid;
+    u64 height;
+    i64 net_sats;
+    string direction;
+};
+
+dictionary WifKey {
+    string address;
+    string pubkey_hex;
+};
+
+dictionary HtlcInfo {
+    string secret_hash_hex;
+    string recipient_address;
+    string refund_address;
+    u64 timeout_height;
+};
+
+dictionary AgreementParams {
+    string template_type;
+    string payer_address;
+    string payee_address;
+    u64 total_amount_sats;
+    u64 timeout_height;
+    string secret_hash_hex;
+    string? asset_reference;
+    string? payment_reference;
+    string? document_hash;
+};
+
+dictionary LightClientConfig {
+    string seedlist_path;
+    string? extra_peer;
+    u64 start_height;
+    string? start_hash;
+};

@@ -115,7 +115,7 @@ export function WelcomeScreen({ navigation }: Props) {
 
         {/* Tagline fades in */}
         <Animated.Text style={[styles.tagline, { opacity: subOpacity }]}>
-          Decentralized Commerce Protocol
+          The decentralized commerce network
         </Animated.Text>
 
         {/* Sub-tagline fades in */}
@@ -132,13 +132,13 @@ export function WelcomeScreen({ navigation }: Props) {
         ]}
       >
         <AnimatedButton
-          label="Create new wallet"
-          onPress={() => navigation.navigate('Mnemonic', { mode: 'create' })}
+          label="Create New Wallet"
+          onPress={() => navigation.navigate('SecurityNotice', { mode: 'create' })}
         />
         <View style={{ height: 12 }} />
         <AnimatedButton
-          label="Import existing wallet"
-          onPress={() => navigation.navigate('Mnemonic', { mode: 'import' })}
+          label="Import Wallet"
+          onPress={() => navigation.navigate('SecurityNotice', { mode: 'import' })}
         />
       </Animated.View>
     </View>

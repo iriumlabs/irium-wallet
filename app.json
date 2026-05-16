@@ -5,10 +5,16 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "irium",
-    "platforms": ["android", "ios"],
+    "platforms": [
+      "android",
+      "ios"
+    ],
     "ios": {
       "bundleIdentifier": "com.iriumlabs.wallet",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.iriumlabs.wallet",
@@ -16,7 +22,13 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-font"
-    ]
+      "expo-font",
+      "expo-splash-screen"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "33b6d8ed-0724-4506-84f5-f5d4aed8ce4b"
+      }
+    }
   }
 }

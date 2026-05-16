@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { Colors, Fonts } from '../components/theme';
+import { IriumLogo } from '../components/IriumLogo';
 
 interface Props {
   hasWallet: boolean;
@@ -8,48 +9,41 @@ interface Props {
 }
 
 export function IriumSplash({ onDone }: Props) {
-  const logoScale = useRef(new Animated.Value(0.3)).current;
-  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const logoScale   = useRef(new Animated.Value(0)).current;
   const glowOpacity = useRef(new Animated.Value(0)).current;
-  const textOpacity = useRef(new Animated.Value(0)).current;
-  const textTranslate = useRef(new Animated.Value(12)).current;
+  const iriumOpacity = useRef(new Animated.Value(0)).current;
+  const walletOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.sequence([
-      // Logo springs in
-      Animated.parallel([
-        Animated.spring(logoScale, {
-          toValue: 1,
-          tension: 60,
-          friction: 7,
-          useNativeDriver: true,
-        }),
-        Animated.timing(logoOpacity, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowOpacity, {
-          toValue: 0.3,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ]),
-      // Text fades in 300ms after logo lands
-      Animated.parallel([
-        Animated.timing(textOpacity, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(textTranslate, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-      ]),
-      // Hold for 900ms then dismiss
-      Animated.delay(900),
+      // Logo springs in from 0 with overshoot
+      Animated.spring(logoScale, {
+        toValue: 1,
+        tension: 70,
+        friction: 6,
+        useNativeDriver: true,
+      }),
+      // Glow expands
+      Animated.timing(glowOpacity, {
+        toValue: 0.4,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      // "IRIUM" fades in after 600ms
+      Animated.delay(200),
+      Animated.timing(iriumOpacity, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      // "WALLET" fades in after 800ms
+      Animated.delay(200),
+      Animated.timing(walletOpacity, {
+        toValue: 1,
+        duration: 350,
+        useNativeDriver: true,
+      }),
+      Animated.delay(700),
     ]).start(() => onDone());
   }, []);
 
@@ -58,28 +52,16 @@ export function IriumSplash({ onDone }: Props) {
       {/* Radial glow behind logo */}
       <Animated.View style={[styles.glow, { opacity: glowOpacity }]} />
 
-      {/* IRM logo */}
-      <Animated.View
-        style={[
-          styles.logo,
-          { opacity: logoOpacity, transform: [{ scale: logoScale }] },
-        ]}
-      >
-        <Text style={styles.logoText}>IRM</Text>
+      <Animated.View style={{ transform: [{ scale: logoScale }] }}>
+        <IriumLogo size={120} />
       </Animated.View>
 
-      {/* Irium Wallet text */}
-      <Animated.View
-        style={{
-          opacity: textOpacity,
-          transform: [{ translateY: textTranslate }],
-          alignItems: 'center',
-          marginTop: 24,
-        }}
-      >
-        <Text style={styles.title}>Irium Wallet</Text>
-        <Text style={styles.subtitle}>Decentralized Commerce Protocol</Text>
-      </Animated.View>
+      <Animated.Text style={[styles.irium, { opacity: iriumOpacity }]}>
+        IRIUM
+      </Animated.Text>
+      <Animated.Text style={[styles.wallet, { opacity: walletOpacity }]}>
+        WALLET
+      </Animated.Text>
     </View>
   );
 }
@@ -87,47 +69,34 @@ export function IriumSplash({ onDone }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.bg,
+    backgroundColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
   glow: {
     position: 'absolute',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: Colors.primary,
-    // shadowColor creates the soft glow on supported platforms
-    shadowColor: Colors.primary,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: '#7B2FFF',
+    shadowColor: '#7B2FFF',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 60,
+    shadowOpacity: 0.9,
+    shadowRadius: 80,
     elevation: 0,
   },
-  logo: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoText: {
-    color: '#FFFFFF',
-    fontSize: 26,
+  irium: {
+    color: Colors.textPrimary,
+    fontSize: 28,
     fontFamily: Fonts.bold,
-    letterSpacing: 2,
+    letterSpacing: 8,
+    marginTop: 28,
   },
-  title: {
-    color: Colors.text,
-    fontSize: 26,
-    fontFamily: Fonts.bold,
-    letterSpacing: 0.5,
-  },
-  subtitle: {
-    color: Colors.textMuted,
+  wallet: {
+    color: Colors.textSecondary,
     fontSize: 13,
     fontFamily: Fonts.regular,
+    letterSpacing: 4,
     marginTop: 6,
   },
 });

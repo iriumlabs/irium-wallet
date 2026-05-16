@@ -4,48 +4,88 @@ import {
   Text,
   StyleSheet,
   StatusBar,
-  ActivityIndicator,
+  Pressable,
   Animated,
-  TouchableOpacity,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
+import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParams } from '../../navigation/OnboardingNavigator';
 import { bridge } from '../../bridge';
 import { useWalletStore } from '../../store/wallet';
-import { GradientButton } from '../../components/GradientButton';
-import { Colors, Typography, Fonts } from '../../components/theme';
+import { AddressText } from '../../components/AddressText';
+import { Colors, Fonts, GradientColors } from '../../components/theme';
 
-type Props = NativeStackScreenProps<OnboardingStackParams, 'Ready'> & { onComplete: () => void };
+type Props = NativeStackScreenProps<OnboardingStackParams, 'Ready'> & {
+  onComplete: () => void;
+};
 
-const MAX_ADDR_LEN = 50;
+function GradientBtn({
+  label,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const pressIn = () =>
+    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, friction: 8 }).start();
+  const pressOut = () =>
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 6 }).start();
+
+  return (
+    <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} disabled={disabled}>
+      <Animated.View
+        style={{
+          transform: [{ scale }],
+          borderRadius: 14,
+          overflow: 'hidden',
+          opacity: disabled ? 0.45 : 1,
+        }}
+      >
+        <LinearGradient
+          colors={GradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.btnGradient}
+        >
+          <Text style={styles.btnLabel}>{label}</Text>
+        </LinearGradient>
+      </Animated.View>
+    </Pressable>
+  );
+}
 
 export function ReadyScreen({ onComplete }: Props) {
-  const { seedHex, rpcUrl, setAddress } = useWalletStore();
-  const [addr, setAddr]     = useState('');
+  const { seedHex, setAddress } = useWalletStore();
+  const [addr, setAddr] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Success circle springs in
-  const circleScale   = useRef(new Animated.Value(0)).current;
+  // Green circle springs in
+  const circleScale = useRef(new Animated.Value(0)).current;
   const circleOpacity = useRef(new Animated.Value(0)).current;
-  const checkOpacity  = useRef(new Animated.Value(0)).current;
 
-  // "Wallet ready" title slide
+  // Checkmark fades in after circle
+  const checkOpacity = useRef(new Animated.Value(0)).current;
+
+  // Title slides up
   const titleOpacity = useRef(new Animated.Value(0)).current;
-  const titleY       = useRef(new Animated.Value(16)).current;
+  const titleY = useRef(new Animated.Value(16)).current;
 
-  // Per-character opacity for address reveal
-  const charAnims = useRef(
-    Array.from({ length: MAX_ADDR_LEN }, () => new Animated.Value(0))
-  ).current;
-
-  // Button entrance
+  // Address + button fades in
+  const contentOpacity = useRef(new Animated.Value(0)).current;
   const btnOpacity = useRef(new Animated.Value(0)).current;
 
+  // Derive address on mount
   useEffect(() => {
-    if (!seedHex) { setLoading(false); return; }
+    if (!seedHex) {
+      setLoading(false);
+      return;
+    }
     bridge
       .deriveAddress(seedHex, 0)
       .then((a) => {
@@ -62,13 +102,18 @@ export function ReadyScreen({ onComplete }: Props) {
 
     // Circle springs in
     Animated.parallel([
-      Animated.spring(circleScale,   { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
+      Animated.spring(circleScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 80,
+        useNativeDriver: true,
+      }),
       Animated.timing(circleOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
     ]).start();
 
-    // Checkmark fades in after circle settles
+    // Checkmark fades in
     Animated.sequence([
-      Animated.delay(280),
+      Animated.delay(300),
       Animated.timing(checkOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
 
@@ -77,45 +122,32 @@ export function ReadyScreen({ onComplete }: Props) {
       Animated.delay(200),
       Animated.parallel([
         Animated.timing(titleOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-        Animated.timing(titleY,       { toValue: 0, duration: 350, useNativeDriver: true }),
+        Animated.timing(titleY, { toValue: 0, duration: 350, useNativeDriver: true }),
       ]),
     ]).start();
 
-    // Address character reveal
+    // Address fades in
     Animated.sequence([
-      Animated.delay(600),
-      Animated.stagger(
-        25,
-        charAnims.slice(0, MAX_ADDR_LEN).map((anim) =>
-          Animated.timing(anim, { toValue: 1, duration: 40, useNativeDriver: true })
-        )
-      ),
+      Animated.delay(550),
+      Animated.timing(contentOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
     ]).start();
 
-    // Button
+    // Button fades in last
     Animated.sequence([
-      Animated.delay(900),
+      Animated.delay(850),
       Animated.timing(btnOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
     ]).start();
   }, [loading, error]);
 
-  async function copyAddress() {
-    if (!addr) return;
-    await Clipboard.setStringAsync(addr);
-    Alert.alert('Copied', 'Address copied to clipboard');
-  }
-
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
 
       <View style={styles.center}>
         {loading ? (
           <ActivityIndicator color={Colors.primary} size="large" />
         ) : error ? (
-          <Text style={[Typography.caption, { color: Colors.error, textAlign: 'center' }]}>
-            {error}
-          </Text>
+          <Text style={styles.errorText}>{error}</Text>
         ) : (
           <>
             {/* Animated success circle */}
@@ -140,39 +172,29 @@ export function ReadyScreen({ onComplete }: Props) {
                 transform: [{ translateY: titleY }],
                 alignItems: 'center',
                 marginTop: 28,
+                marginBottom: 24,
               }}
             >
-              <Text style={styles.title}>Wallet ready</Text>
-              <Text style={styles.subtitle}>Your first address</Text>
+              <Text style={styles.title}>Wallet Ready</Text>
+              <Text style={styles.subtitle}>Your wallet has been set up successfully</Text>
             </Animated.View>
 
-            {/* Address character reveal */}
+            {/* Address */}
             {addr.length > 0 && (
-              <TouchableOpacity onPress={copyAddress} style={styles.addrWrap} activeOpacity={0.7}>
-                <View style={styles.addrChars}>
-                  {addr.split('').map((ch, i) => (
-                    <Animated.Text
-                      key={i}
-                      style={[styles.addrChar, { opacity: charAnims[i] ?? 1 }]}
-                    >
-                      {ch}
-                    </Animated.Text>
-                  ))}
-                </View>
-                <Text style={styles.copyHint}>Tap to copy</Text>
-              </TouchableOpacity>
+              <Animated.View style={[styles.addrCard, { opacity: contentOpacity }]}>
+                <Text style={styles.addrLabel}>Your first address</Text>
+                <AddressText address={addr} truncate={false} />
+                <Text style={styles.tapHint}>Tap address to copy</Text>
+              </Animated.View>
             )}
-
-            <Text style={styles.rpcLabel}>
-              RPC: {rpcUrl}
-            </Text>
           </>
         )}
       </View>
 
-      <Animated.View style={{ opacity: btnOpacity }}>
-        <GradientButton
-          label="Open wallet"
+      {/* Open wallet button */}
+      <Animated.View style={[styles.footer, { opacity: btnOpacity }]}>
+        <GradientBtn
+          label="Open Wallet"
           onPress={onComplete}
           disabled={loading || !!error}
         />
@@ -184,77 +206,89 @@ export function ReadyScreen({ onComplete }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.bg,
-    padding: 24,
+    backgroundColor: Colors.background,
+    paddingHorizontal: 24,
     paddingBottom: 60,
     justifyContent: 'space-between',
   },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   successCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     backgroundColor: Colors.card,
     borderWidth: 2,
     borderColor: Colors.success,
     alignItems: 'center',
     justifyContent: 'center',
-    // Soft glow
     shadowColor: Colors.success,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 16,
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
     elevation: 0,
   },
   checkmark: {
-    fontSize: 44,
+    fontSize: 48,
     color: Colors.success,
     fontFamily: Fonts.bold,
+    lineHeight: 56,
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontFamily: Fonts.bold,
-    color: Colors.text,
-    marginBottom: 6,
+    color: Colors.textPrimary,
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: Fonts.regular,
-    color: Colors.textMuted,
-    marginBottom: 16,
-    marginTop: 4,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
-  addrWrap: {
-    alignItems: 'center',
+  addrCard: {
+    width: '100%',
     backgroundColor: Colors.card,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.border,
-    padding: 16,
-    maxWidth: '100%',
-    marginTop: 4,
+    padding: 18,
+    alignItems: 'center',
+    gap: 10,
   },
-  addrChars: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
+  addrLabel: {
+    fontSize: 11,
+    fontFamily: Fonts.semibold,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
-  addrChar: {
-    fontFamily: 'monospace',
-    fontSize: 13,
-    color: Colors.primary,
-  },
-  copyHint: {
-    marginTop: 8,
+  tapHint: {
     fontSize: 11,
     fontFamily: Fonts.regular,
     color: Colors.textMuted,
   },
-  rpcLabel: {
-    marginTop: 16,
-    fontSize: 12,
+  errorText: {
+    fontSize: 14,
     fontFamily: Fonts.regular,
-    color: Colors.textMuted,
+    color: Colors.danger,
     textAlign: 'center',
+  },
+  footer: {
+    paddingTop: 12,
+  },
+  btnGradient: {
+    paddingVertical: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnLabel: {
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontFamily: Fonts.semibold,
+    letterSpacing: 0.3,
   },
 });

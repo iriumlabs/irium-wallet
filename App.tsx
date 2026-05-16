@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Font from 'expo-font';
 import {
   SpaceGrotesk_400Regular,
+  SpaceGrotesk_500Medium,
   SpaceGrotesk_600SemiBold,
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
@@ -15,7 +16,7 @@ import { usePeers } from './src/hooks/usePeers';
 import { OnboardingNavigator } from './src/navigation/OnboardingNavigator';
 import { MainNavigator } from './src/navigation/MainNavigator';
 import { IriumSplash } from './src/screens/SplashScreen';
-import { Colors } from './src/components/theme';
+import { Colors, GradientColors } from './src/components/theme';
 
 function WalletApp({ onLogout }: { onLogout: () => void }) {
   usePeers();
@@ -37,6 +38,7 @@ export default function App() {
       try {
         await Font.loadAsync({
           SpaceGrotesk_400Regular,
+          SpaceGrotesk_500Medium,
           SpaceGrotesk_600SemiBold,
           SpaceGrotesk_700Bold,
         });
@@ -84,5 +86,5 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
+  root: { flex: 1, backgroundColor: Colors.background },
 });

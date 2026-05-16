@@ -78,20 +78,25 @@ export const useWalletStore = create<WalletState>((set) => ({
   },
 
   async loadFromStorage() {
-    const [seed, wif, rpc, auth, peer] = await Promise.all([
-      SecureStore.getItemAsync('seed_hex'),
-      SecureStore.getItemAsync('wif_key'),
-      SecureStore.getItemAsync('rpc_url'),
-      SecureStore.getItemAsync('auth_token'),
-      SecureStore.getItemAsync('extra_peer'),
-    ]);
-    set({
-      seedHex: seed ?? null,
-      wif: wif ?? null,
-      rpcUrl: rpc ?? 'http://127.0.0.1:38300',
-      authToken: auth ?? undefined,
-      extraPeer: peer ?? undefined,
-    });
+    try {
+      const [seed, wif, rpc, auth, peer] = await Promise.all([
+        SecureStore.getItemAsync('seed_hex'),
+        SecureStore.getItemAsync('wif_key'),
+        SecureStore.getItemAsync('rpc_url'),
+        SecureStore.getItemAsync('auth_token'),
+        SecureStore.getItemAsync('extra_peer'),
+      ]);
+      set({
+        seedHex: seed ?? null,
+        wif: wif ?? null,
+        rpcUrl: rpc ?? 'http://127.0.0.1:38300',
+        authToken: auth ?? undefined,
+        extraPeer: peer ?? undefined,
+      });
+    } catch {
+      // Keychain unavailable (Expo Go first boot, permissions, etc.) — start with safe defaults
+      set({ seedHex: null, wif: null, rpcUrl: 'http://127.0.0.1:38300' });
+    }
   },
 
   async clear() {

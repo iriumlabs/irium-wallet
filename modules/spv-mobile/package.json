@@ -1,0 +1,28 @@
+{
+  "name": "spv-mobile",
+  "version": "0.1.0",
+  "description": "Irium SPV light client native module",
+  "main": "index.ts",
+  "types": "src/SpvMobile.types.ts",
+  "scripts": {
+    "build": "expo-module build",
+    "clean": "expo-module clean",
+    "lint": "expo-module lint",
+    "typescript": "tsc --noEmit"
+  },
+  "keywords": ["expo", "expo-module", "irium", "spv"],
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "devDependencies": {
+    "expo-modules-core": "^2.2.0",
+    "typescript": "^5"
+  },
+  "expo": {
+    "fyi": {
+      "android": "./expo-module.config.json"
+    }
+  }
+}

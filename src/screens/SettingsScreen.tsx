@@ -15,6 +15,9 @@ import { PeerIndicator } from '../components/PeerIndicator';
 import { Colors, Typography } from '../components/theme';
 
 const APP_VERSION = '0.1.0';
+const NETWORK = 'Mainnet';
+const TOTAL_SUPPLY = '100,000,000 IRM';
+const NEXT_HALVING = 'Block #50,000';
 
 export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
   const { rpcUrl, authToken, extraPeer, address, seedHex, wif, setRpcUrl, setAuthToken, setExtraPeer, clear } = useWalletStore();
@@ -192,7 +195,7 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
         </Card>
 
         {/* Danger zone */}
-        <Card style={{ borderColor: Colors.error }}>
+        <Card style={{ borderColor: Colors.error, marginBottom: 16 }}>
           <Text style={[Typography.h3, { color: Colors.error, marginBottom: 8 }]}>Danger zone</Text>
           <Text style={[Typography.caption, { marginBottom: 16 }]}>
             Deleting the wallet removes your seed from this device. You need your 24-word phrase to recover.
@@ -202,8 +205,17 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
           </TouchableOpacity>
         </Card>
 
+        {/* About */}
+        <Card style={{ marginBottom: 16, gap: 10 }}>
+          <Text style={[Typography.h3, { marginBottom: 4 }]}>About</Text>
+          <StatusRow label="App version" value={APP_VERSION} />
+          <StatusRow label="Network" value={NETWORK} />
+          <StatusRow label="Total supply" value={TOTAL_SUPPLY} />
+          <StatusRow label="Next halving" value={NEXT_HALVING} />
+        </Card>
+
         {/* Version */}
-        <Text style={[Typography.caption, { textAlign: 'center', marginTop: 24 }]}>
+        <Text style={[Typography.caption, { textAlign: 'center', marginTop: 8 }]}>
           Irium Wallet v{APP_VERSION}
         </Text>
       </ScrollView>
@@ -213,9 +225,12 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
         <Modal visible transparent animationType="fade" onRequestClose={() => setShowSeed(false)}>
           <View style={styles.seedOverlay}>
             <View style={styles.seedSheet}>
-              <Text style={[Typography.h3, { marginBottom: 8 }]}>Recovery phrase (seed hex)</Text>
-              <Text style={[Typography.caption, { marginBottom: 16, color: Colors.warning }]}>
-                Never share this with anyone. Store offline.
+              <Text style={[Typography.h3, { marginBottom: 8 }]}>Recovery seed (hex)</Text>
+              <Text style={[Typography.caption, { marginBottom: 4, color: Colors.warning }]}>
+                Store this hex safely — never share it.
+              </Text>
+              <Text style={[Typography.caption, { marginBottom: 16, color: Colors.textSecondary }]}>
+                This is your raw seed entropy. Keep it offline.
               </Text>
               <View style={styles.seedBox}>
                 <Text style={[Typography.mono, { fontSize: 11, lineHeight: 18 }]} selectable>
@@ -327,10 +342,10 @@ function StatusRow({ label, value, mono }: { label: string; value: string; mono?
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
+  root: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 24, paddingBottom: 60 },
   input: {
-    backgroundColor: '#0a0a0a', borderRadius: 10, padding: 14,
+    backgroundColor: Colors.card, borderRadius: 10, padding: 14,
     color: Colors.text, fontSize: 14, borderWidth: 1, borderColor: Colors.border,
   },
   btnRow: { flexDirection: 'row', gap: 10 },
@@ -348,15 +363,15 @@ const styles = StyleSheet.create({
   },
   seedOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 24 },
   seedSheet: {
-    backgroundColor: '#111111', borderRadius: 20, borderWidth: 1,
-    borderColor: '#1F1F1F', padding: 24,
+    backgroundColor: Colors.card, borderRadius: 20, borderWidth: 1,
+    borderColor: Colors.border, padding: 24,
   },
   seedBox: {
-    backgroundColor: '#0a0a0a', borderRadius: 10, padding: 14,
+    backgroundColor: Colors.background, borderRadius: 10, padding: 14,
     borderWidth: 1, borderColor: Colors.warning,
   },
   pinInput: {
-    backgroundColor: '#0a0a0a', borderRadius: 10, padding: 14,
+    backgroundColor: Colors.background, borderRadius: 10, padding: 14,
     color: Colors.text, fontSize: 20, borderWidth: 1, borderColor: Colors.border,
     textAlign: 'center', letterSpacing: 8,
   },
