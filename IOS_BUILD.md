@@ -1,7 +1,6 @@
-# iOS Build Guide — Irium Wallet (TestFlight)
+# iOS Build Guide — Irium Wallet
 
-This guide covers the complete iOS build process from a Mac.
-All Rust compilation and Xcode steps must be performed on macOS.
+Complete steps to build and sideload Irium Wallet on iPhone from a Mac.
 
 ---
 
@@ -16,120 +15,96 @@ All Rust compilation and Xcode steps must be performed on macOS.
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Xcode | 15.0+ | App Store |
+| Xcode | 15.0+ | Mac App Store (free) |
 | Xcode Command Line Tools | latest | `xcode-select --install` |
 | Homebrew | latest | https://brew.sh |
 | Node.js | 22+ | `brew install node` |
 | Rust | stable | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | CocoaPods | 1.14+ | `sudo gem install cocoapods` |
 
-### Apple Developer account
-- Enrolled in Apple Developer Program ($99/yr)
-- App ID registered: `com.irium.wallet`
-- Distribution certificate + provisioning profile for TestFlight
+No Apple Developer Program ($99/yr) required for sideloading to your own iPhone.
+A free Apple ID is sufficient — Xcode creates a development certificate automatically.
 
 ---
 
-## Step 1 — Clone and install dependencies
+## Step 1 — Clone the repo
 
 ```bash
-git clone <your-repo-url> irium-wallet
+git clone https://github.com/iriumlabs/irium-wallet
 cd irium-wallet
 npm install
 ```
 
 ---
 
-## Step 2 — Add iOS Rust targets
+## Step 2 — Install iOS Rust targets
 
 ```bash
-rustup target add aarch64-apple-ios          # physical devices (arm64)
-rustup target add aarch64-apple-ios-sim      # simulator on Apple Silicon
-rustup target add x86_64-apple-ios           # simulator on Intel Mac
+rustup target add aarch64-apple-ios
+rustup target add aarch64-apple-ios-sim
 ```
 
 Verify:
 ```bash
 rustup target list --installed | grep ios
-# Expected output:
 # aarch64-apple-ios
 # aarch64-apple-ios-sim
-# x86_64-apple-ios
 ```
 
 ---
 
-## Step 3 — Build Rust library for iOS
+## Step 3 — Build Rust bridge for iOS
 
 ```bash
 cd rust-bridge
-```
-
-### Build for physical device (arm64)
-```bash
 cargo build --target aarch64-apple-ios --release
-```
-
-### Build for simulator
-```bash
-# Apple Silicon Mac:
 cargo build --target aarch64-apple-ios-sim --release
-
-# Intel Mac:
-cargo build --target x86_64-apple-ios --release
+cd ..
 ```
 
-### Create XCFramework (device + simulator combined)
+---
+
+## Step 4 — Create XCFramework
 
 ```bash
-# Simulator slice — use the correct target for your Mac:
-# Apple Silicon:
-SIMULATOR_TARGET=aarch64-apple-ios-sim
-# Intel:
-# SIMULATOR_TARGET=x86_64-apple-ios
-
 xcodebuild -create-xcframework \
-  -library target/aarch64-apple-ios/release/libspv_mobile.a \
-  -headers include/ \
-  -library target/${SIMULATOR_TARGET}/release/libspv_mobile.a \
-  -headers include/ \
-  -output SpvMobile.xcframework
-```
-
-Copy the XCFramework into the iOS module:
-```bash
-cp -r SpvMobile.xcframework ../modules/spv-mobile/ios/
-cd ..
+  -library rust-bridge/target/aarch64-apple-ios/release/libspv_mobile.a \
+  -headers rust-bridge/src/ \
+  -library rust-bridge/target/aarch64-apple-ios-sim/release/libspv_mobile.a \
+  -headers rust-bridge/src/ \
+  -output modules/spv-mobile/ios/SpvMobile.xcframework
 ```
 
 ---
 
-## Step 4 — Generate UniFFI Swift bindings
+## Step 5 — Generate Swift UniFFI bindings
 
 ```bash
-# Install uniffi-bindgen if not present
-cargo install uniffi-bindgen
-
-cd rust-bridge
-uniffi-bindgen generate src/spv_mobile.udl --language swift --out-dir ../modules/spv-mobile/ios/
-cd ..
+cargo run --bin uniffi-bindgen generate \
+  rust-bridge/src/spv_mobile.udl \
+  --language swift \
+  --out-dir modules/spv-mobile/ios/
 ```
 
-This produces `spv_mobile.swift` and `spv_mobileFFI.h` in the iOS module.
+This produces two files in `modules/spv-mobile/ios/`:
+- `spv_mobile.swift` — Swift wrapper (called by `SpvMobileModule.swift`)
+- `spv_mobileFFI.h` — C bridging header (referenced by the podspec)
 
 ---
 
-## Step 5 — Prebuild Expo iOS project
+## Step 6 — Generate the Xcode project
 
 ```bash
 npx expo prebuild --platform ios --clean
 ```
 
-This generates the `ios/` directory with the Xcode project.
+This generates the `ios/` directory containing the Xcode project, AppDelegate,
+Info.plist, and all native module wiring. (This step requires macOS — it was
+skipped on the Windows build machine.)
 
 ---
 
-## Step 6 — Install CocoaPods dependencies
+## Step 7 — Install CocoaPods dependencies
 
 ```bash
 cd ios
@@ -137,7 +112,7 @@ pod install
 cd ..
 ```
 
-If pod install fails with signing issues:
+If pod install fails:
 ```bash
 cd ios
 pod install --repo-update
@@ -146,30 +121,39 @@ cd ..
 
 ---
 
-## Step 7 — Configure signing in Xcode
+## Step 8 — Open in Xcode and sign
 
-1. Open `ios/IriumWallet.xcworkspace` (not `.xcodeproj`)
-2. Select the `IriumWallet` target → **Signing & Capabilities**
-3. Set **Team** to your Apple Developer team
-4. Ensure **Bundle Identifier** is `com.irium.wallet`
-5. Set **Provisioning Profile** to your App Store distribution profile
+```bash
+open ios/IriumWallet.xcworkspace
+```
+
+In Xcode:
+1. Select the **IriumWallet** target in the left panel
+2. Go to **Signing & Capabilities**
+3. Check **Automatically manage signing**
+4. Set **Team** → Add Account → sign in with your Apple ID (free account works)
+5. Bundle ID is `com.irium.wallet` — change to `com.yourname.iriumwallet` if there is a conflict
 
 ---
 
-## Step 8 — Archive for TestFlight
+## Step 9 — Connect iPhone and sideload
 
-### Via Xcode UI
-1. Set scheme to **IriumWallet** and destination to **Any iOS Device (arm64)**
-2. **Product → Archive**
-3. In the Organizer, click **Distribute App**
-4. Choose **TestFlight & App Store** → **App Store Connect**
-5. Follow the upload wizard
+1. Connect iPhone to Mac via USB
+2. Unlock the iPhone and tap **Trust** when prompted
+3. In Xcode, set the destination (top bar) to your iPhone
+4. Press **Run** (▶) or Cmd+R
+5. Build and install — first build takes 3–5 minutes
 
-### Via command line
+After install, open **Settings → General → VPN & Device Management** on the iPhone,
+tap your Apple ID, and tap **Trust** to allow the app to run.
+
+---
+
+## Step 10 — Archive for TestFlight (optional, requires $99 Developer account)
+
 ```bash
 cd ios
 
-# Build archive
 xcodebuild archive \
   -workspace IriumWallet.xcworkspace \
   -scheme IriumWallet \
@@ -179,14 +163,13 @@ xcodebuild archive \
   PROVISIONING_PROFILE_SPECIFIER="<your-profile-name>" \
   CODE_SIGN_IDENTITY="Apple Distribution: <Your Name> (<TEAM_ID>)"
 
-# Export IPA for TestFlight
 xcodebuild -exportArchive \
   -archivePath build/IriumWallet.xcarchive \
   -exportPath build/ \
   -exportOptionsPlist ExportOptions.plist
 ```
 
-**ExportOptions.plist** template:
+**ExportOptions.plist:**
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -204,54 +187,11 @@ xcodebuild -exportArchive \
 </plist>
 ```
 
----
-
-## Step 9 — Upload to App Store Connect
-
-### Via Xcode Organizer (recommended)
-After export, Xcode Organizer offers **Upload to App Store Connect** directly.
-
-### Via command line (xcrun altool / notarytool)
-```bash
-xcrun altool --upload-app \
-  --type ios \
-  --file build/IriumWallet.ipa \
-  --apiKey <your-api-key> \
-  --apiIssuer <your-issuer-id>
+Add to `ios/IriumWallet/Info.plist` before upload:
+```xml
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
 ```
-
-Or with `xcrun notarytool` for newer Xcode:
-```bash
-xcrun notarytool submit build/IriumWallet.ipa \
-  --apple-id <your-apple-id> \
-  --password <app-specific-password> \
-  --team-id <your-team-id> \
-  --wait
-```
-
----
-
-## Step 10 — Enable TestFlight
-
-1. Go to [App Store Connect](https://appstoreconnect.apple.com)
-2. Select **Irium Wallet** → **TestFlight**
-3. Wait for build processing (~10-15 min)
-4. Add internal testers or create a public TestFlight link
-5. Submit for Beta App Review if using external testers
-
----
-
-## Known differences from Android build
-
-| Item | Android | iOS |
-|------|---------|-----|
-| Rust lib format | `.so` (JNI) | `.a` static lib in XCFramework |
-| Bindings | Kotlin (UniFFI) | Swift (UniFFI) |
-| Native module | `SpvMobileModule.kt` | `SpvMobileModule.swift` |
-| Secure storage | `expo-secure-store` | Keychain (same expo module) |
-| P2P networking | TCP via tokio | TCP via tokio (same Rust code) |
-| Font loading | `@expo-google-fonts/space-grotesk` | Same |
-| Min OS | Android 10 (API 29) | iOS 16.0 |
 
 ---
 
@@ -259,7 +199,6 @@ xcrun notarytool submit build/IriumWallet.ipa \
 
 **`cargo build` fails with linker errors**
 ```bash
-# Ensure Xcode CLT is active
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 ```
 
@@ -270,18 +209,32 @@ pod repo update
 pod install
 ```
 
-**Build fails: "No such module 'SpvMobile'"**
+**"No such module 'SpvMobile'"**
 - Confirm `SpvMobile.xcframework` is in `modules/spv-mobile/ios/`
-- In Xcode: Target → Build Phases → Link Binary → add the XCFramework
+- Xcode → Target → Build Phases → Link Binary → add the XCFramework manually
 
 **App crashes on launch in simulator**
-- Simulator uses `aarch64-apple-ios-sim` (Apple Silicon) or `x86_64-apple-ios` (Intel)
-- Ensure the XCFramework includes the correct simulator slice
+- Simulator uses `aarch64-apple-ios-sim`
+- Confirm the XCFramework includes the simulator slice (Step 4 above builds both)
 
-**TestFlight upload rejected: "Missing compliance"**
-- Add to `ios/IriumWallet/Info.plist`:
-```xml
-<key>ITSAppUsesNonExemptEncryption</key>
-<false/>
-```
-(Irium uses standard TLS, no proprietary encryption)
+**"Untrusted Developer" on iPhone**
+- Settings → General → VPN & Device Management → your Apple ID → Trust
+
+**Free certificate expired (7-day limit)**
+- Reconnect iPhone, press Run in Xcode again — Xcode re-signs automatically
+
+---
+
+## What was prepared on Windows
+
+The following files are committed and ready in the repo:
+
+| File | Description |
+|------|-------------|
+| `modules/spv-mobile/ios/SpvMobileModule.swift` | Expo Swift module — mirrors Kotlin module exactly |
+| `modules/spv-mobile/SpvMobile.podspec` | CocoaPods spec for the iOS native module |
+| `modules/spv-mobile/expo-module.config.json` | Updated to include `ios` platform |
+
+The `ios/` Xcode project and the binary `SpvMobile.xcframework` must be generated
+on the Mac (Steps 3–7 above). They are not committed because `expo prebuild`
+requires macOS and the XCFramework is a compiled binary artefact.
