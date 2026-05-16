@@ -5,9 +5,13 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "irium",
-    "platforms": ["android"],
+    "platforms": ["android", "ios"],
+    "ios": {
+      "bundleIdentifier": "com.iriumlabs.wallet",
+      "supportsTablet": false
+    },
     "android": {
-      "package": "com.irium.wallet",
+      "package": "com.iriumlabs.wallet",
       "versionCode": 1
     },
     "plugins": [
