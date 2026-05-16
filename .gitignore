@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+dist/
+android/build/
+android/.gradle/
+android/app/build/
+android/app/*.keystore
+!android/app/debug.keystore
+android/local.properties
+android/gradle.properties
+*.jsbundle
+.DS_Store
+*.env
