@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Irium Wallet",
+    "slug": "irium-wallet",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "irium",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.irium.wallet",
+      "versionCode": 1
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font"
+    ]
+  }
+}
