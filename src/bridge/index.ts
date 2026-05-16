@@ -1,21 +1,11 @@
 import type { SpvBridge } from './types';
 import { mockBridge } from './mock';
 
-// When the real .so is linked, replace mockBridge with the native module.
-// Zero JS changes needed — same SpvBridge interface.
-const USE_MOCK = true; // temporary — Expo Go UI testing only
+// Expo Go / CI mode — mock bridge only, no native module bundled.
+// To switch to the real native .so for production:
+//   1. Set USE_MOCK = false
+//   2. Replace this file's export with: require('spv-mobile')
+//   3. Build a custom dev client (NOT Expo Go)
+export const bridge: SpvBridge = mockBridge;
 
-let _bridge: SpvBridge;
-
-if (USE_MOCK) {
-  _bridge = mockBridge;
-} else {
-  // Real native module — imported lazily so the mock path doesn't break on dev machines
-  // that don't have the .so yet.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const native = require('spv-mobile');
-  _bridge = (native.default ?? native) as SpvBridge;
-}
-
-export const bridge = _bridge;
 export * from './types';
