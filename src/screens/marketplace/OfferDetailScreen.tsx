@@ -141,18 +141,6 @@ export function OfferDetailScreen({ route }: Props) {
             { opacity: sectionAnims[1].opacity, transform: [{ translateY: sectionAnims[1].y }] },
           ]}
         >
-          <LinearGradient
-            colors={GradientColors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.amountTopBorder}
-          />
-          <LinearGradient
-            colors={['rgba(123,47,255,0.10)', 'rgba(0,212,255,0.06)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
           <Text style={styles.amountLabel}>AMOUNT</Text>
           <Text style={styles.amountValue}>{irmStr(offer.amount_irm)}</Text>
           <Text style={styles.amountUnit}>IRM</Text>
@@ -233,17 +221,13 @@ export function OfferDetailScreen({ route }: Props) {
         <Pressable
           onPress={takeOffer}
           disabled={offer.status !== 'open' || expired}
-          style={({ pressed }) => ({ opacity: pressed ? 0.85 : (offer.status !== 'open' || expired) ? 0.4 : 1 })}
+          style={({ pressed }) => [
+            styles.takeBtn,
+            { opacity: pressed ? 0.85 : (offer.status !== 'open' || expired) ? 0.4 : 1 },
+          ]}
         >
-          <LinearGradient
-            colors={GradientColors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.takeBtn}
-          >
-            <Ionicons name="lock-closed-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.takeBtnText}>Take Offer</Text>
-          </LinearGradient>
+          <Ionicons name="lock-closed-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.takeBtnText}>Take Offer</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -426,7 +410,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     paddingVertical: 16,
-    borderRadius: 16,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
   },
   takeBtnText: { color: '#FFFFFF', fontSize: 16, fontFamily: Fonts.semiBold, letterSpacing: 0.4 },
 });

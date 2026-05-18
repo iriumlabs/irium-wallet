@@ -133,15 +133,7 @@ function AgreementCard({ agreement, index, isHistory, onDetails }: {
   return (
     <Animated.View style={{ opacity, transform: [{ translateX: slideX }] }}>
       <TouchableOpacity activeOpacity={0.85} onPress={onDetails} style={agStyles.card}>
-        {/* Gradient top border — same as dashboard hero */}
-        {!isHistory && (
-          <LinearGradient
-            colors={GradientColors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={agStyles.topBorder}
-          />
-        )}
+        {/* No gradient border in clean redesign */}
 
         {/* Header: status badge + countdown */}
         <View style={agStyles.headerRow}>
@@ -265,16 +257,10 @@ const agStyles = StyleSheet.create({
     marginBottom: 4,
   },
   amountValue: {
-    fontSize: 26,
+    fontSize: 24,
     fontFamily: Fonts.bold,
-    // The "gradient text" effect uses the gradient start color as the dominant tone.
-    // Per-letter interpolation would require splitting; for a numeric amount we use a
-    // gradient-like tint that visually pops on dark backgrounds.
-    color: Colors.accent,
-    letterSpacing: -0.5,
-    textShadowColor: Colors.primary + '50',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
   },
   amountUnit: {
     fontSize: 12,
@@ -351,24 +337,10 @@ function TemplateCard({ item, index }: { item: TemplateItem; index: number }) {
         onPressOut={() => Animated.spring(scale, { toValue: 1, friction: 5, useNativeDriver: true }).start()}
       >
         <View style={tplStyles.card}>
-          {/* Gradient top border */}
-          <LinearGradient
-            colors={GradientColors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={tplStyles.topBorder}
-          />
-
           <View style={tplStyles.row}>
-            {/* Gradient icon background (purple→cyan at 45°) */}
-            <LinearGradient
-              colors={GradientColors}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={tplStyles.iconBox}
-            >
-              <Ionicons name={item.icon} size={24} color="#FFFFFF" />
-            </LinearGradient>
+            <View style={tplStyles.iconBox}>
+              <Ionicons name={item.icon} size={22} color={Colors.primary} />
+            </View>
 
             <View style={{ flex: 1 }}>
               <Text style={tplStyles.title}>{item.title}</Text>
@@ -386,14 +358,10 @@ function TemplateCard({ item, index }: { item: TemplateItem; index: number }) {
 const tplStyles = StyleSheet.create({
   card: {
     backgroundColor: Colors.card,
-    borderRadius: 18,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.borderSubtle,
+    borderColor: Colors.border,
     padding: 14,
-    overflow: 'hidden',
-  },
-  topBorder: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: 1.5,
   },
   row: {
     flexDirection: 'row',
@@ -401,11 +369,14 @@ const tplStyles = StyleSheet.create({
     gap: 14,
   },
   iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: Colors.cardElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   title: {
     fontSize: 15,

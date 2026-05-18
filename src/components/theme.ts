@@ -1,50 +1,49 @@
-// ─── Color tokens ────────────────────────────────────────────────────────────
-// Deep-space palette. The values match the redesign spec; existing color names
-// are kept and re-pointed so every screen picks up the new look automatically.
+// ─── Color tokens — irium-core-aligned palette ───────────────────────────────
+// Deep navy background, indigo accent, professional & flat.
+// All previously-used names are kept as aliases so screens pick up new values
+// without code edits.
 
 export const Colors = {
   // Surfaces
-  background:          '#000005',
-  backgroundSecondary: '#05050F',
-  card:                '#0A0A1A',
-  cardElevated:        '#0F0F20',
-  border:              '#1A1A2E',
-  borderSubtle:        '#12122A',
+  background:          '#0A0E1A',
+  backgroundSecondary: '#0F1629',
+  card:                '#0F1629',
+  cardElevated:        '#15203A',
+  border:              '#1E2A45',
+  borderSubtle:        '#1E2A45',
 
   // Brand
-  primary:          '#7B2FFF',
-  primaryLight:     '#9B4FFF',
-  primaryEnd:       '#3B5BDB', // legacy — kept for the old purple→blue gradient consumers
-  accent:           '#00D4FF',
-  accentSecondary:  '#A855F7',
-  gradientStart:    '#7B2FFF',
-  gradientEnd:      '#00D4FF',
+  primary:          '#6366F1', // indigo
+  primaryLight:     '#818CF8',
+  primaryEnd:       '#6366F1', // flatten gradients to single color
+  accent:           '#8B5CF6', // secondary purple
+  accentSecondary:  '#8B5CF6',
+  gradientStart:    '#6366F1',
+  gradientEnd:      '#6366F1', // no visible gradient — flat indigo
 
   // Text
-  textPrimary:   '#FFFFFF',
-  textSecondary: '#8892A4',
-  textMuted:     '#4B5563',
+  textPrimary:   '#F8FAFC',
+  textSecondary: '#94A3B8',
+  textMuted:     '#64748B',
 
   // Semantic
-  success: '#00D4A0',
+  success: '#10B981',
   warning: '#F59E0B',
-  danger:  '#FF4466',
+  danger:  '#EF4444',
   amber:   '#F59E0B',
 
-  // Legacy aliases — existing code uses these
-  bg:    '#000005',
-  text:  '#FFFFFF',
-  error: '#FF4466',
+  // Legacy aliases
+  bg:    '#0A0E1A',
+  text:  '#F8FAFC',
+  error: '#EF4444',
 } as const;
 
-// New brand gradient (purple → cyan). Replaces the old purple → blue.
-export const GradientColors: [string, string] = ['#7B2FFF', '#00D4FF'];
+// Flat indigo — consumers that use a "gradient" get a solid block instead.
+export const GradientColors: [string, string] = ['#6366F1', '#6366F1'];
 
-// Secondary purple gradient (kept for places that want a warmer brand swirl)
-export const GradientPurple: [string, string] = ['#7B2FFF', '#A855F7'];
-
-// Glass-card overlay (use over dark backgrounds with a 1px gradient border)
-export const GlassFill: [string, string] = ['rgba(123,47,255,0.12)', 'rgba(0,212,255,0.06)'];
+// Kept for compatibility — also flat.
+export const GradientPurple: [string, string] = ['#8B5CF6', '#8B5CF6'];
+export const GlassFill:      [string, string] = ['#0F1629', '#0F1629'];
 
 // ─── Typography tokens ───────────────────────────────────────────────────────
 
@@ -54,7 +53,7 @@ export const Fonts = {
   semibold:  'SpaceGrotesk_600SemiBold',
   semiBold:  'SpaceGrotesk_600SemiBold', // legacy alias
   bold:      'SpaceGrotesk_700Bold',
-  extrabold: 'SpaceGrotesk_700Bold',     // package tops at 700
+  extrabold: 'SpaceGrotesk_700Bold',
 } as const;
 
 export const Spacing = {

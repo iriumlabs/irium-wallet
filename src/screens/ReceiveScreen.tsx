@@ -127,13 +127,11 @@ export function ReceiveScreen() {
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
 
-      {/* Modal handle bar */}
-      <View style={styles.handleBar} />
       <View style={styles.titleRow}>
         <Text style={styles.titleText}>Receive IRM</Text>
       </View>
 
-      {/* ── QR card with gradient border ── */}
+      {/* ── QR card ── */}
       <Animated.View
         style={{
           transform: [{ scale: qrScale }],
@@ -142,12 +140,7 @@ export function ReceiveScreen() {
           marginTop: 8,
         }}
       >
-        <LinearGradient
-          colors={GradientColors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.qrBorder}
-        >
+        <View style={styles.qrBorder}>
           <View style={styles.qrCard}>
             {loading ? (
               <View style={styles.qrPlaceholder}>
@@ -189,7 +182,7 @@ export function ReceiveScreen() {
               <View style={styles.qrPlaceholder} />
             )}
           </View>
-        </LinearGradient>
+        </View>
       </Animated.View>
 
       {/* ── Address display ── */}
@@ -265,19 +258,9 @@ export function ReceiveScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
 
-  // Modal header
-  handleBar: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    marginTop: 8,
-    marginBottom: 8,
-  },
   titleRow: {
     paddingHorizontal: 24,
-    paddingTop: 8,
+    paddingTop: 16,
     paddingBottom: 12,
   },
   titleText: {
@@ -287,16 +270,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // Gradient border around QR card
+  // Plain QR card — no gradient border
   qrBorder: {
-    padding: 2,
-    borderRadius: 22,
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 0,
   },
   qrCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.background,
-    borderRadius: 20,
+    backgroundColor: Colors.card,
+    borderRadius: 14,
     padding: 24,
   },
   qrPlaceholder: { width: 232, height: 232, alignItems: 'center', justifyContent: 'center' },

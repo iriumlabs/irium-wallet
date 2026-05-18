@@ -356,8 +356,6 @@ export function SendScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        {/* Modal handle bar */}
-        <View style={styles.handleBar} />
         <View style={styles.modalTitleRow}>
           <Text style={styles.modalTitle}>Send IRM</Text>
         </View>
@@ -368,7 +366,7 @@ export function SendScreen() {
           {step === 'compose' && (
             <>
               {/* Amount section — glass card */}
-              <View style={styles.glassCard}>
+              <View style={styles.card}>
                 <View style={styles.amountSection}>
                   <TextInput
                     style={styles.amountInput}
@@ -408,7 +406,7 @@ export function SendScreen() {
               </View>
 
               {/* Fee speed */}
-              <View style={styles.glassCard}>
+              <View style={styles.card}>
                 <Text style={styles.fieldLabel}>Transaction speed</Text>
                 <View style={styles.feeRow}>
                   <FeePill speed="slow"   label="🐢 Slow"   rate={feeRate * 0.5} />
@@ -426,7 +424,7 @@ export function SendScreen() {
               </View>
 
               {/* Address */}
-              <View style={styles.glassCard}>
+              <View style={styles.card}>
                 <Text style={styles.fieldLabel}>Recipient address</Text>
                 <Animated.View
                   style={[
@@ -481,7 +479,7 @@ export function SendScreen() {
           {/* ── Confirm ── */}
           {step === 'confirm' && (
             <>
-              <View style={[styles.glassCard, { gap: 14 }]}>
+              <View style={[styles.card, { gap: 14 }]}>
                 <ConfirmRow label="To"     value={toAddress}             mono />
                 <ConfirmRow label="Amount" value={`${irmStr(amountSats)} IRM`} />
                 <ConfirmRow label="Fee"    value={`${irmStr(feeSats)} IRM`} />
@@ -602,17 +600,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 20, paddingBottom: 60, gap: 14 },
 
-  // Modal header
-  handleBar: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    marginTop: 8,
-    marginBottom: 12,
-  },
+  // Title row
   modalTitleRow: {
+    paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 6,
   },
@@ -623,30 +613,24 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // Glass card surface
+  // Card surface (flat, no glass)
   card: {
     backgroundColor: Colors.card,
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: 16,
   },
-  glassCard: {
-    backgroundColor: 'rgba(10,10,26,0.92)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.borderSubtle,
-    padding: 16,
-  },
 
-  // Amount underline (gradient line below the 52px number)
+  // Amount underline (clean indigo line under the input on focus)
   amountUnderlineWrap: {
-    width: '70%',
+    width: '60%',
     height: 2,
     marginTop: 4,
     marginBottom: 8,
     borderRadius: 1,
     overflow: 'hidden',
+    backgroundColor: Colors.primary,
   },
   amountUnderline: {
     flex: 1,
