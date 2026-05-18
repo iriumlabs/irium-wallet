@@ -14,6 +14,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParams } from '../../navigation/OnboardingNavigator';
 import { Colors, Fonts, GradientColors } from '../../components/theme';
+import { DeepSpaceBg } from '../../components/onboarding/DeepSpaceBg';
+import { StepDots } from '../../components/onboarding/StepDots';
 import { tempMnemonicWords } from './MnemonicScreen';
 
 type Props = NativeStackScreenProps<OnboardingStackParams, 'VerifyMnemonic'>;
@@ -79,6 +81,18 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
 
   const [answers, setAnswers] = useState<string[]>(['', '', '']);
   const [submitted, setSubmitted] = useState(false);
+  const shakeAnims = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
+
+  function triggerShake(i: number) {
+    const v = shakeAnims[i];
+    v.setValue(0);
+    Animated.sequence([
+      Animated.timing(v, { toValue: -10, duration: 60, useNativeDriver: true }),
+      Animated.timing(v, { toValue: 10,  duration: 60, useNativeDriver: true }),
+      Animated.timing(v, { toValue: -8,  duration: 60, useNativeDriver: true }),
+      Animated.timing(v, { toValue: 0,   duration: 60, useNativeDriver: true }),
+    ]).start();
+  }
 
   // Entrance animations
   const titleOpacity = useRef(new Animated.Value(0)).current;
@@ -130,22 +144,33 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
   function onConfirm() {
     setSubmitted(true);
     if (verify()) {
-      navigation.navigate('NodeConfig');
+      navigation.push('Connecting', { mode: 'create' });
+      return;
     }
-    // If wrong, stay and show error state — user can correct inputs
+    // Shake any cards that have a wrong answer
+    positions.forEach((pos, i) => {
+      const expected = words[pos]?.toLowerCase() ?? '';
+      const given    = answers[i].toLowerCase();
+      if (expected && given !== expected) triggerShake(i);
+    });
   }
 
   const allFilled = answers.every((a) => a.length > 0);
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
+      <DeepSpaceBg />
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
 
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
         </Pressable>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <StepDots total={6} current={3} />
+        </View>
+        <View style={styles.backBtn} />
       </View>
 
       <ScrollView
@@ -187,7 +212,10 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
                 (isOk || isMockOk) && styles.cardOk,
                 {
                   opacity: cardAnims[i].opacity,
-                  transform: [{ translateY: cardAnims[i].y }],
+                  transform: [
+                    { translateY: cardAnims[i].y },
+                    { translateX: shakeAnims[i] },
+                  ],
                 },
               ]}
             >
@@ -242,12 +270,15 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#000',
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingTop: 52,
     paddingHorizontal: 16,
     paddingBottom: 8,
+    gap: 8,
   },
   backBtn: {
     width: 40,
@@ -279,9 +310,17 @@ const styles = StyleSheet.create({
   },
   cardError: {
     borderColor: Colors.danger,
+    shadowColor: Colors.danger,
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
   },
   cardOk: {
     borderColor: Colors.success,
+    shadowColor: Colors.success,
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
   },
   cardHeader: {
     flexDirection: 'row',

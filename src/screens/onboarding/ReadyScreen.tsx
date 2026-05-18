@@ -14,6 +14,8 @@ import { OnboardingStackParams } from '../../navigation/OnboardingNavigator';
 import { bridge } from '../../bridge';
 import { useWalletStore } from '../../store/wallet';
 import { AddressText } from '../../components/AddressText';
+import { DeepSpaceBg } from '../../components/onboarding/DeepSpaceBg';
+import { StepDots } from '../../components/onboarding/StepDots';
 import { Colors, Fonts, GradientColors } from '../../components/theme';
 
 type Props = NativeStackScreenProps<OnboardingStackParams, 'Ready'> & {
@@ -141,7 +143,11 @@ export function ReadyScreen({ onComplete }: Props) {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
+      <DeepSpaceBg />
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <View style={{ alignItems: 'center', paddingTop: 52, paddingBottom: 8 }}>
+        <StepDots total={6} current={6} />
+      </View>
 
       <View style={styles.center}>
         {loading ? (
@@ -206,7 +212,7 @@ export function ReadyScreen({ onComplete }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#000',
     paddingHorizontal: 24,
     paddingBottom: 60,
     justifyContent: 'space-between',

@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -21,6 +22,7 @@ import { useNodeStore } from '../store/node';
 import { useSync } from '../hooks/useSync';
 import { useBalance } from '../hooks/useBalance';
 import { IriumLogo } from '../components/IriumLogo';
+import { AddressPicker } from '../components/AddressPicker';
 import { Colors, GradientColors, Typography, Fonts } from '../components/theme';
 import type { MainTabParams } from '../navigation/MainNavigator';
 
@@ -30,72 +32,27 @@ function formatIrm(sats: number) {
   return (sats / 1e8).toFixed(8);
 }
 
-// ─── Quick Action Card ────────────────────────────────────────────────────────
-
-interface QuickActionProps {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  tint: string;
-  onPress: () => void;
-  delay: number;
+function timeAgo(blockHeight: number, currentHeight: number) {
+  const blocksOld = Math.max(0, currentHeight - blockHeight);
+  if (blocksOld < 1) return 'just now';
+  if (blocksOld < 6) return `${blocksOld} block${blocksOld === 1 ? '' : 's'} ago`;
+  const mins = blocksOld * 2; // assume ~2 min blocks
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
-function QuickAction({ label, icon, tint, onPress, delay }: QuickActionProps) {
-  const pressScale = useRef(new Animated.Value(1)).current;
-  const entrance   = useRef(new Animated.Value(0)).current;
-  const entranceY  = useRef(new Animated.Value(12)).current;
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.parallel([
-        Animated.spring(entrance, { toValue: 1, friction: 7, useNativeDriver: true }),
-        Animated.timing(entranceY, { toValue: 0, duration: 280, useNativeDriver: true }),
-      ]),
-    ]).start();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function pressIn() {
-    Animated.spring(pressScale, { toValue: 0.93, friction: 8, useNativeDriver: true }).start();
-  }
-  function pressOut() {
-    Animated.spring(pressScale, { toValue: 1, friction: 6, useNativeDriver: true }).start();
-  }
-  function handlePress() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
-  }
-
-  return (
-    <Pressable
-      onPress={handlePress}
-      onPressIn={pressIn}
-      onPressOut={pressOut}
-      style={{ flex: 1 }}
-    >
-      <Animated.View
-        style={[
-          styles.qa,
-          { opacity: entrance, transform: [{ scale: pressScale }, { translateY: entranceY }] },
-        ]}
-      >
-        <Ionicons name={icon} size={26} color={tint} />
-        <Text style={[styles.qaLabel, { color: tint }]}>{label}</Text>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-// ─── Transaction Row ──────────────────────────────────────────────────────────
+// ─── Transaction row (polished) ──────────────────────────────────────────────
 
 interface TxRowProps {
   tx: { txid: string; height: number; net_sats: number; direction: string };
+  currentHeight: number;
   delay: number;
 }
 
-function TxRow({ tx, delay }: TxRowProps) {
-  const slideX  = useRef(new Animated.Value(30)).current;
+function TxRow({ tx, currentHeight, delay }: TxRowProps) {
+  const slideX  = useRef(new Animated.Value(20)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -111,38 +68,83 @@ function TxRow({ tx, delay }: TxRowProps) {
 
   const isIn  = tx.direction === 'in';
   const color = isIn ? Colors.success : Colors.danger;
+  const typeLabel = isIn ? 'Received' : 'Sent';
+  const confirmations = Math.max(0, currentHeight - tx.height);
 
   return (
-    <Animated.View style={[styles.txRow, { opacity, transform: [{ translateX: slideX }] }]}>
-      <View style={[styles.txIconCircle, { backgroundColor: color + '22' }]}>
-        <Ionicons
-          name={isIn ? 'arrow-down' : 'arrow-up'}
-          size={16}
-          color={color}
-        />
+    <Animated.View style={[txStyles.row, { opacity, transform: [{ translateX: slideX }] }]}>
+      <View style={[txStyles.iconCircle, { backgroundColor: color + '22' }]}>
+        <Ionicons name={isIn ? 'arrow-down' : 'arrow-up'} size={16} color={color} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.txId} numberOfLines={1}>
-          {tx.txid.slice(0, 10)}…{tx.txid.slice(-6)}
+        <Text style={txStyles.type}>{typeLabel}</Text>
+        <Text style={txStyles.meta} numberOfLines={1}>
+          Block #{tx.height.toLocaleString()} · {confirmations} conf
         </Text>
-        <Text style={styles.txBlock}>Block {tx.height.toLocaleString()}</Text>
       </View>
-      <Text style={[styles.txAmount, { color }]}>
-        {isIn ? '+' : '-'}{formatIrm(Math.abs(tx.net_sats))} IRM
-      </Text>
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text style={[txStyles.amount, { color }]}>
+          {isIn ? '+' : '-'}{formatIrm(Math.abs(tx.net_sats))}
+        </Text>
+        <Text style={txStyles.time}>{timeAgo(tx.height, currentHeight)}</Text>
+      </View>
     </Animated.View>
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+const txStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.borderSubtle,
+    padding: 14,
+    gap: 12,
+  },
+  iconCircle: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  type: { color: Colors.textPrimary, fontSize: 14, fontFamily: Fonts.semiBold },
+  meta: { color: Colors.textSecondary, fontSize: 11, fontFamily: Fonts.regular, marginTop: 2 },
+  amount: { fontSize: 14, fontFamily: Fonts.bold },
+  time: { color: Colors.textMuted, fontSize: 11, fontFamily: Fonts.regular, marginTop: 2 },
+});
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
 
 export function DashboardScreen() {
   const nav = useNavigation<Nav>();
-  const { address, balance, history, setBalance, setHistory, setUtxos } = useWalletStore();
-  const { rpcUrl, authToken } = useWalletStore();
+  const {
+    address, balance, history, seedHex, addressIndex,
+    setAddress, setAddressIndex, setBalance, setHistory, setUtxos,
+    rpcUrl, authToken,
+  } = useWalletStore();
   const { nodeStatus, peerCount, isSyncing, lastRefresh, touchRefresh } = useNodeStore();
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [copyFlash, setCopyFlash]         = useState(false);
+
+  // Entrance animation — staggered fade+slide for each major block
+  const sectionAnims = useRef(
+    [0, 1, 2, 3].map(() => ({ opacity: new Animated.Value(0), y: new Animated.Value(20) })),
+  ).current;
+
+  useEffect(() => {
+    Animated.stagger(
+      60,
+      sectionAnims.map((a) =>
+        Animated.parallel([
+          Animated.timing(a.opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.timing(a.y,       { toValue: 0, duration: 300, useNativeDriver: true }),
+        ]),
+      ),
+    ).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Animated balance count-up
   const balanceAnim = useRef(new Animated.Value(0)).current;
@@ -151,6 +153,12 @@ export function DashboardScreen() {
 
   useSync();
   useBalance();
+
+  // Derive address on first mount if missing
+  useEffect(() => {
+    if (address || !seedHex) return;
+    bridge.deriveAddress(seedHex, addressIndex).then(setAddress).catch(() => {});
+  }, [address, seedHex, addressIndex, setAddress]);
 
   // Drive displayed integer from animation
   useEffect(() => {
@@ -164,11 +172,27 @@ export function DashboardScreen() {
     if (target === prevBalance.current) return;
     Animated.timing(balanceAnim, {
       toValue: target,
-      duration: 700,
+      duration: 900,
       useNativeDriver: false,
     }).start();
     prevBalance.current = target;
   }, [balance?.confirmed, balanceAnim]);
+
+  async function copyAddress() {
+    if (!address) return;
+    await Clipboard.setStringAsync(address);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCopyFlash(true);
+    setTimeout(() => setCopyFlash(false), 1100);
+  }
+
+  async function selectAddress(idx: number) {
+    if (!seedHex) return;
+    setAddressIndex(idx);
+    const addr = await bridge.deriveAddress(seedHex, idx);
+    setAddress(addr);
+    setPickerVisible(false);
+  }
 
   const refresh = useCallback(async () => {
     if (!address || !rpcUrl) return;
@@ -191,26 +215,45 @@ export function DashboardScreen() {
     }
   }, [address, rpcUrl, authToken, setBalance, setUtxos, setHistory, touchRefresh]);
 
-  const isLoading    = lastRefresh === 0 && !error;
-  const synced       = !isSyncing && nodeStatus != null;
-  const statusDot    = synced ? Colors.success : Colors.amber;
-  const statusLabel  = synced
-    ? `● Live #${nodeStatus!.height.toLocaleString()} · ${peerCount}p`
-    : `● Syncing · ${peerCount}p`;
+  const isLoading = lastRefresh === 0 && !error;
+  const synced    = !isSyncing && nodeStatus != null;
+  const statusDot = synced ? Colors.success : Colors.warning;
+  const currentHeight = nodeStatus?.height ?? 0;
 
   return (
     <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <IriumLogo size={28} />
-        <Text style={[styles.netStatus, { color: statusDot }]}>{statusLabel}</Text>
-        <Ionicons name="notifications-outline" size={22} color={Colors.text} />
-      </View>
+      {/* ── Header: logo / status / bell + gear ── */}
+      <Animated.View
+        style={[
+          styles.header,
+          { opacity: sectionAnims[0].opacity, transform: [{ translateY: sectionAnims[0].y }] },
+        ]}
+      >
+        <View style={styles.headerLogoWrap}>
+          <View style={styles.headerLogoGlow} pointerEvents="none" />
+          <IriumLogo size={32} />
+        </View>
+        <View style={styles.headerStatus}>
+          <View style={[styles.statusDot, { backgroundColor: statusDot }]} />
+          <Text style={[styles.statusLabel, { color: statusDot }]} numberOfLines={1}>
+            {synced ? `LIVE #${currentHeight.toLocaleString()}` : 'SYNCING'}
+          </Text>
+        </View>
+        <View style={styles.headerRight}>
+          <Pressable hitSlop={8} style={styles.headerBtn}>
+            <Ionicons name="notifications-outline" size={22} color={Colors.textPrimary} />
+          </Pressable>
+          <Pressable hitSlop={8} style={styles.headerBtn} onPress={() => nav.navigate('Settings')}>
+            <Ionicons name="settings-outline" size={22} color={Colors.textPrimary} />
+          </Pressable>
+        </View>
+      </Animated.View>
 
       <ScrollView
         contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -219,306 +262,425 @@ export function DashboardScreen() {
           />
         }
       >
-        {/* ── Balance card ── */}
-        <LinearGradient
-          colors={GradientColors}
-          style={styles.balanceCard}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+        {/* ── Balance hero card ── */}
+        <Animated.View
+          style={{
+            opacity: sectionAnims[1].opacity,
+            transform: [{ translateY: sectionAnims[1].y }],
+          }}
         >
-          <Text style={styles.balanceLabel}>TOTAL BALANCE</Text>
+          <View style={styles.balanceCard}>
+            {/* Top gradient border */}
+            <LinearGradient
+              colors={GradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.balanceTopBorder}
+            />
+            {/* Subtle tint background */}
+            <LinearGradient
+              colors={['rgba(123,47,255,0.10)', 'rgba(0,212,255,0.06)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFillObject}
+            />
 
-          {isLoading ? (
-            <Text style={styles.balancePlaceholder}>Loading…</Text>
-          ) : (
-            <Text style={styles.balanceAmount}>{formatIrm(displaySats)} IRM</Text>
-          )}
+            <Text style={styles.balanceLabel}>TOTAL BALANCE</Text>
 
-          {!isLoading && balance && (
-            <Text style={styles.balanceSats}>
-              {balance.confirmed.toLocaleString()} sats
-            </Text>
-          )}
-        </LinearGradient>
+            {isLoading ? (
+              <Text style={styles.balancePlaceholder}>—</Text>
+            ) : (
+              <Text style={styles.balanceAmount}>{formatIrm(displaySats)}</Text>
+            )}
+            <Text style={styles.balanceUnit}>IRM</Text>
 
-        {/* ── Network strip ── */}
-        <View style={styles.networkStrip}>
-          <View style={styles.netPill}>
-            <Text style={styles.netPillText}>⚡ Block </Text>
-            <Text style={[styles.netPillValue]}>
-              {nodeStatus ? nodeStatus.height.toLocaleString() : '—'}
-            </Text>
+            {!isLoading && balance && (
+              <Text style={styles.balanceSats}>
+                {balance.confirmed.toLocaleString()} sats
+              </Text>
+            )}
+
+            {/* Address row */}
+            {address && (
+              <View style={styles.addrRow}>
+                <Pressable onPress={copyAddress} hitSlop={6} style={styles.addrPress}>
+                  <Text style={styles.addrIndexLabel}>#{addressIndex}</Text>
+                  <Text style={styles.addrFull} numberOfLines={1}>{address}</Text>
+                  <Ionicons
+                    name={copyFlash ? 'checkmark' : 'copy-outline'}
+                    size={13}
+                    color={copyFlash ? Colors.success : Colors.textSecondary}
+                  />
+                </Pressable>
+                <Pressable onPress={() => setPickerVisible(true)} style={styles.changePill}>
+                  <Text style={styles.changePillText}>Change</Text>
+                  <Ionicons name="chevron-down" size={11} color={Colors.primary} />
+                </Pressable>
+              </View>
+            )}
           </View>
-          <View style={styles.netDivider} />
-          <View style={styles.netPill}>
-            <Text style={styles.netPillText}>🌐 </Text>
-            <Text style={styles.netPillValue}>{peerCount} peers</Text>
-          </View>
-          <View style={styles.netDivider} />
-          <View style={[styles.netPill, { gap: 6 }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusDot }]} />
-            <Text style={[styles.netPillValue, { color: statusDot }]}>
-              {synced ? 'Live' : 'Syncing'}
-            </Text>
-          </View>
-        </View>
+        </Animated.View>
 
         {/* ── Error banner ── */}
         {error && (
           <View style={styles.errorBanner}>
-            <Ionicons name="warning-outline" size={15} color={Colors.error} />
+            <Ionicons name="warning-outline" size={15} color={Colors.danger} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
 
-        {/* ── Quick actions ── */}
-        <View style={styles.actions}>
-          <QuickAction
-            label="Send"
-            icon="arrow-up-circle"
-            tint={Colors.danger}
-            onPress={() => nav.navigate('Send')}
-            delay={0}
-          />
-          <QuickAction
-            label="Receive"
-            icon="arrow-down-circle"
-            tint={Colors.success}
-            onPress={() => nav.navigate('Receive')}
-            delay={60}
-          />
-          <QuickAction
-            label="History"
-            icon="time-outline"
-            tint="#60A5FA"
-            onPress={() => nav.navigate('History')}
-            delay={120}
-          />
-          <QuickAction
-            label="Settle"
-            icon="shield-checkmark-outline"
-            tint={Colors.primary}
-            onPress={() => nav.navigate('Settlement')}
-            delay={180}
-          />
-        </View>
+        {/* ── Quick actions (Send + Receive) ── */}
+        <Animated.View
+          style={[
+            styles.actions,
+            {
+              opacity: sectionAnims[2].opacity,
+              transform: [{ translateY: sectionAnims[2].y }],
+            },
+          ]}
+        >
+          <SendButton onPress={() => nav.navigate('Send')} />
+          <ReceiveButton onPress={() => nav.navigate('Receive')} />
+        </Animated.View>
 
         {/* ── Recent activity ── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          {history.length > 0 && (
-            <Pressable onPress={() => nav.navigate('History')}>
-              <Text style={styles.viewAll}>View all →</Text>
-            </Pressable>
-          )}
-        </View>
-
-        {isLoading ? (
-          <Text style={Typography.caption}>Loading…</Text>
-        ) : history.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No transactions yet</Text>
+        <Animated.View
+          style={{
+            opacity: sectionAnims[3].opacity,
+            transform: [{ translateY: sectionAnims[3].y }],
+            gap: 10,
+          }}
+        >
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Activity</Text>
+            {history.length > 0 && (
+              <Pressable onPress={() => nav.navigate('History')} hitSlop={6}>
+                <Text style={styles.viewAllInline}>View all →</Text>
+              </Pressable>
+            )}
           </View>
-        ) : (
-          history.slice(0, 10).map((tx, i) => (
-            <TxRow key={tx.txid} tx={tx} delay={i * 50} />
-          ))
-        )}
 
-        {history.length > 0 && (
-          <Pressable onPress={() => nav.navigate('History')} style={styles.viewAllBtn}>
-            <Text style={styles.viewAllBtnText}>View all transactions →</Text>
-          </Pressable>
-        )}
+          {isLoading ? (
+            <Text style={Typography.caption}>Loading…</Text>
+          ) : history.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="time-outline" size={40} color={Colors.textMuted} />
+              <Text style={styles.emptyText}>No transactions yet</Text>
+              <Text style={styles.emptyHint}>Receive some IRM to see activity here.</Text>
+            </View>
+          ) : (
+            history.slice(0, 6).map((tx, i) => (
+              <TxRow key={tx.txid} tx={tx} currentHeight={currentHeight} delay={i * 50} />
+            ))
+          )}
+        </Animated.View>
       </ScrollView>
+
+      <AddressPicker
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        onSelect={selectAddress}
+        currentIndex={addressIndex}
+        seedHex={seedHex}
+      />
     </SafeAreaView>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Quick-action pill buttons ───────────────────────────────────────────────
+
+function SendButton({ onPress }: { onPress: () => void }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  return (
+    <Pressable
+      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onPress(); }}
+      onPressIn={() => Animated.spring(scale, { toValue: 0.96, friction: 8, useNativeDriver: true }).start()}
+      onPressOut={() => Animated.spring(scale, { toValue: 1, friction: 6, useNativeDriver: true }).start()}
+      style={{ flex: 1 }}
+    >
+      <Animated.View style={{ transform: [{ scale }], borderRadius: 16, overflow: 'hidden' }}>
+        <LinearGradient
+          colors={['#7B2FFF', '#3B5BDB']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={qaStyles.btn}
+        >
+          <Ionicons name="arrow-up" size={20} color="#FFFFFF" />
+          <Text style={qaStyles.label}>Send</Text>
+        </LinearGradient>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+function ReceiveButton({ onPress }: { onPress: () => void }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  return (
+    <Pressable
+      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onPress(); }}
+      onPressIn={() => Animated.spring(scale, { toValue: 0.96, friction: 8, useNativeDriver: true }).start()}
+      onPressOut={() => Animated.spring(scale, { toValue: 1, friction: 6, useNativeDriver: true }).start()}
+      style={{ flex: 1 }}
+    >
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <LinearGradient
+          colors={GradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={qaStyles.borderWrap}
+        >
+          <View style={qaStyles.glass}>
+            <Ionicons name="arrow-down" size={20} color={Colors.accent} />
+            <Text style={qaStyles.labelGlass}>Receive</Text>
+          </View>
+        </LinearGradient>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+const qaStyles = StyleSheet.create({
+  btn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    borderRadius: 16,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.3,
+  },
+  borderWrap: {
+    padding: 1.5,
+    borderRadius: 16,
+  },
+  glass: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14.5,
+    paddingHorizontal: 18,
+    borderRadius: 14.5,
+    backgroundColor: 'rgba(10,10,26,0.85)',
+  },
+  labelGlass: {
+    color: Colors.textPrimary,
+    fontFamily: Fonts.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.3,
+  },
+});
+
+// ─── Screen styles ───────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
+  root: { flex: 1, backgroundColor: Colors.background },
 
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  netStatus: {
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
-    letterSpacing: 0.3,
-  },
-
-  content: { padding: 16, gap: 14, paddingBottom: 40 },
-
-  // Balance card
-  balanceCard: {
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-  },
-  balanceLabel: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 11,
-    fontFamily: Fonts.semiBold,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-    marginBottom: 12,
-  },
-  balanceAmount: {
-    color: '#FFFFFF',
-    fontSize: 40,
-    fontFamily: Fonts.bold,
-    letterSpacing: -1,
-  },
-  balancePlaceholder: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 40,
-    fontFamily: Fonts.bold,
-  },
-  balanceSats: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 13,
-    fontFamily: Fonts.regular,
-    marginTop: 6,
-  },
-
-  // Network strip
-  networkStrip: {
-    flexDirection: 'row',
-    backgroundColor: Colors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
     paddingVertical: 12,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
   },
-  netPill: {
+  headerLogoWrap: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerLogoGlow: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary + '30',
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.7,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
+  headerStatus: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
   },
-  netPillText: {
-    fontSize: 13,
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  statusLabel: {
+    fontSize: 12,
+    fontFamily: Fonts.semiBold,
+    letterSpacing: 1.2,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerBtn: { padding: 4 },
+
+  content: { padding: 16, gap: 16, paddingBottom: 40 },
+
+  // Balance hero card
+  balanceCard: {
+    borderRadius: 22,
+    paddingVertical: 26,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    overflow: 'hidden',
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.borderSubtle,
+  },
+  balanceTopBorder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+  },
+  balanceLabel: {
     color: Colors.textSecondary,
-    fontFamily: Fonts.regular,
+    fontSize: 11,
+    fontFamily: Fonts.semiBold,
+    textTransform: 'uppercase',
+    letterSpacing: 1.6,
+    marginBottom: 10,
   },
-  netPillValue: {
+  balanceAmount: {
+    color: '#FFFFFF',
+    fontSize: 44,
+    fontFamily: Fonts.bold,
+    letterSpacing: -1,
+    lineHeight: 52,
+  },
+  balanceUnit: {
+    color: Colors.textSecondary,
     fontSize: 13,
-    color: Colors.text,
+    fontFamily: Fonts.semiBold,
+    letterSpacing: 2,
+    marginTop: -4,
+  },
+  balancePlaceholder: {
+    color: 'rgba(255,255,255,0.3)',
+    fontSize: 44,
+    fontFamily: Fonts.bold,
+    lineHeight: 52,
+  },
+  balanceSats: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    marginTop: 6,
+  },
+
+  // Address row inside balance card
+  addrRow: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+  },
+  addrPress: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  addrIndexLabel: {
+    color: Colors.textMuted,
+    fontSize: 11,
     fontFamily: Fonts.semiBold,
   },
-  netDivider: { width: 1, height: 20, backgroundColor: Colors.border },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  addrFull: {
+    flex: 1,
+    fontFamily: 'monospace',
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  changePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: Colors.primary + '18',
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+  },
+  changePillText: {
+    color: Colors.primary,
+    fontFamily: Fonts.semiBold,
+    fontSize: 11,
+    letterSpacing: 0.3,
+  },
 
   // Error banner
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1a0000',
+    backgroundColor: 'rgba(255,68,102,0.08)',
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: Colors.error,
+    borderColor: Colors.danger,
   },
-  errorText: { color: Colors.error, fontSize: 13, fontFamily: Fonts.regular, flex: 1 },
+  errorText: { color: Colors.danger, fontSize: 13, fontFamily: Fonts.regular, flex: 1 },
 
   // Quick actions
-  actions: { flexDirection: 'row', gap: 10 },
-  qa: {
-    backgroundColor: Colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingVertical: 16,
-    alignItems: 'center',
-    gap: 8,
-  },
-  qaLabel: {
-    fontSize: 11,
-    fontFamily: Fonts.semiBold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
+  actions: { flexDirection: 'row', gap: 12 },
 
   // Section header
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: 4,
   },
   sectionTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: Fonts.semiBold,
-    color: Colors.text,
+    color: Colors.textPrimary,
+    letterSpacing: 0.2,
   },
-  viewAll: {
-    fontSize: 13,
+  viewAllInline: {
     color: Colors.primary,
     fontFamily: Fonts.semiBold,
-  },
-
-  // Transaction row
-  txRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 14,
-    gap: 12,
-  },
-  txIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  txId: {
-    color: Colors.text,
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
-  },
-  txBlock: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    fontFamily: Fonts.regular,
-    marginTop: 2,
-  },
-  txAmount: {
-    fontSize: 13,
-    fontFamily: Fonts.semiBold,
+    fontSize: 12,
   },
 
   // Empty state
   emptyState: {
-    paddingVertical: 40,
+    paddingVertical: 32,
     alignItems: 'center',
+    gap: 8,
   },
   emptyText: {
     color: Colors.textSecondary,
     fontSize: 14,
-    fontFamily: Fonts.regular,
-  },
-
-  // View all button
-  viewAllBtn: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  viewAllBtnText: {
-    color: Colors.primary,
-    fontSize: 14,
     fontFamily: Fonts.semiBold,
+  },
+  emptyHint: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    textAlign: 'center',
   },
 });

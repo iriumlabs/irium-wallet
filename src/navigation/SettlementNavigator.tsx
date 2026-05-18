@@ -8,9 +8,18 @@ import { MilestoneWizardScreen } from '../screens/MilestoneWizardScreen';
 import { DepositWizardScreen } from '../screens/DepositWizardScreen';
 import { AgreementDetailScreen } from '../screens/AgreementDetailScreen';
 
+export interface OtcPrefill {
+  offerId: string;
+  sellerAddress: string;
+  sellerPubkey?: string;
+  amountSats: number;
+  paymentMethod?: string;
+  timeoutHeight?: number;
+}
+
 export type SettlementStackParams = {
   Hub: undefined;
-  OtcWizard: undefined;
+  OtcWizard: { prefill?: OtcPrefill } | undefined;
   FreelanceWizard: undefined;
   MilestoneWizard: undefined;
   DepositWizard: undefined;

@@ -19,6 +19,8 @@ import { OnboardingStackParams } from '../../navigation/OnboardingNavigator';
 import { bridge } from '../../bridge';
 import { useWalletStore } from '../../store/wallet';
 import { Colors, Fonts, GradientColors } from '../../components/theme';
+import { DeepSpaceBg } from '../../components/onboarding/DeepSpaceBg';
+import { StepDots } from '../../components/onboarding/StepDots';
 
 type Props = NativeStackScreenProps<OnboardingStackParams, 'Mnemonic'>;
 
@@ -184,7 +186,7 @@ export function MnemonicScreen({ navigation, route }: Props) {
       await setSeedHex(seed);
       await setWif(wif);
       setAddress(addr);
-      navigation.navigate('NodeConfig');
+      navigation.push('Connecting', { mode: 'import' });
     } catch (e: any) {
       Alert.alert('Error', e.message ?? 'Failed to process mnemonic');
     } finally {
@@ -193,7 +195,7 @@ export function MnemonicScreen({ navigation, route }: Props) {
   }
 
   function proceedCreate() {
-    navigation.navigate('VerifyMnemonic');
+    navigation.push('VerifyMnemonic');
   }
 
   const words = mnemonic.trim().split(/\s+/).filter(Boolean);
@@ -212,13 +214,18 @@ export function MnemonicScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
+      <DeepSpaceBg />
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
 
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
         </Pressable>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <StepDots total={6} current={2} />
+        </View>
+        <View style={styles.backBtn} />
       </View>
 
       <ScrollView
@@ -378,12 +385,15 @@ export function MnemonicScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#000',
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingTop: 52,
     paddingHorizontal: 16,
     paddingBottom: 8,
+    gap: 8,
   },
   backBtn: {
     width: 40,

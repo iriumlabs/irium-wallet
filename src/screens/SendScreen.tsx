@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,15 @@ import {
   Animated,
   Pressable,
   Share,
+  Modal,
+  Dimensions,
 } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const CUTOUT = 280;
+const CUTOUT_X = (SCREEN_W - CUTOUT) / 2;
+const CUTOUT_Y = (SCREEN_H - CUTOUT) / 2 - 40;
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
@@ -74,18 +82,44 @@ export function SendScreen() {
   const { seedHex, rpcUrl, authToken, address, utxos, balance } = useWalletStore();
   const { feeRate, setFeeRate } = useNodeStore();
 
-  const [toAddress, setToAddress] = useState('');
-  const [amountIrm, setAmountIrm] = useState('');
-  const [useIrm, setUseIrm]       = useState(true);   // IRM vs sats display toggle
-  const [feeSpeed, setFeeSpeed]   = useState<FeeSpeed>('normal');
-  const [step, setStep]           = useState<Step>('compose');
-  const [txHex, setTxHex]         = useState('');
-  const [txid, setTxid]           = useState('');
-  const [loading, setLoading]     = useState(false);
-  const [addrValid, setAddrValid] = useState<boolean | null>(null);
+  const [toAddress, setToAddress]     = useState('');
+  const [amountIrm, setAmountIrm]     = useState('');
+  const [useIrm, setUseIrm]           = useState(true);
+  const [feeSpeed, setFeeSpeed]       = useState<FeeSpeed>('normal');
+  const [step, setStep]               = useState<Step>('compose');
+  const [txHex, setTxHex]             = useState('');
+  const [txid, setTxid]               = useState('');
+  const [loading, setLoading]         = useState(false);
+  const [addrValid, setAddrValid]     = useState<boolean | null>(null);
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scanError, setScanError]     = useState<string | null>(null);
+  const hasScanned                    = useRef(false);
+  const scanPulse                     = useRef(new Animated.Value(0.7)).current;
+
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+
+  // Pulsing border on scanner open
+  useEffect(() => {
+    if (!scannerVisible) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(scanPulse, { toValue: 0.5, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scannerVisible]);
 
   // Address focus border animation
   const addrFocus = useRef(new Animated.Value(0)).current;
+  // Amount input focus (drives gradient underline opacity)
+  const amountFocus = useRef(new Animated.Value(0.4)).current;
+  const onAmountFocus = () =>
+    Animated.timing(amountFocus, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+  const onAmountBlur = () =>
+    Animated.timing(amountFocus, { toValue: 0.4, duration: 200, useNativeDriver: true }).start();
 
   // Success screen animations
   const successScale   = useRef(new Animated.Value(0)).current;
@@ -210,8 +244,36 @@ export function SendScreen() {
     Alert.alert('Copied', 'Transaction ID copied to clipboard');
   }
 
-  function scanQr() {
-    Alert.alert('Coming soon', 'QR scanner coming soon');
+  async function scanQr() {
+    if (!cameraPermission?.granted) {
+      const result = await requestCameraPermission();
+      if (!result.granted) {
+        Alert.alert('Permission required', 'Camera permission is needed to scan QR codes');
+        return;
+      }
+    }
+    hasScanned.current = false;
+    setScanError(null);
+    setScannerVisible(true);
+  }
+
+  function handleScan({ data }: { data: string }) {
+    if (hasScanned.current) return;
+    const trimmed = data.trim();
+    if (!/^[PQ]/.test(trimmed)) {
+      setScanError('Invalid address — must start with P or Q');
+      return;
+    }
+    const ok = bridge.validateAddress(trimmed);
+    if (!ok) {
+      setScanError('Invalid Irium address');
+      return;
+    }
+    hasScanned.current = true;
+    setToAddress(trimmed);
+    setAddrValid(true);
+    setScannerVisible(false);
+    setScanError(null);
   }
 
   function reset() {
@@ -294,24 +356,41 @@ export function SendScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.content}>
-          <Text style={[Typography.h2, { marginBottom: 20 }]}>Send IRM</Text>
+        {/* Modal handle bar */}
+        <View style={styles.handleBar} />
+        <View style={styles.modalTitleRow}>
+          <Text style={styles.modalTitle}>Send IRM</Text>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
           {/* ── Compose ── */}
           {step === 'compose' && (
             <>
-              {/* Amount section */}
-              <View style={styles.card}>
+              {/* Amount section — glass card */}
+              <View style={styles.glassCard}>
                 <View style={styles.amountSection}>
                   <TextInput
                     style={styles.amountInput}
                     value={amountIrm}
                     onChangeText={setAmountIrm}
+                    onFocus={onAmountFocus}
+                    onBlur={onAmountBlur}
                     placeholder="0.00"
-                    placeholderTextColor={Colors.border}
+                    placeholderTextColor="rgba(255,255,255,0.15)"
                     keyboardType="decimal-pad"
                     textAlign="center"
+                    selectionColor={Colors.accent}
                   />
+                  {/* Gradient underline */}
+                  <Animated.View style={[styles.amountUnderlineWrap, { opacity: amountFocus }]}>
+                    <LinearGradient
+                      colors={GradientColors}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.amountUnderline}
+                    />
+                  </Animated.View>
                   <Pressable
                     onPress={() => setUseIrm(!useIrm)}
                     style={styles.unitToggle}
@@ -329,7 +408,7 @@ export function SendScreen() {
               </View>
 
               {/* Fee speed */}
-              <View style={styles.card}>
+              <View style={styles.glassCard}>
                 <Text style={styles.fieldLabel}>Transaction speed</Text>
                 <View style={styles.feeRow}>
                   <FeePill speed="slow"   label="🐢 Slow"   rate={feeRate * 0.5} />
@@ -347,7 +426,7 @@ export function SendScreen() {
               </View>
 
               {/* Address */}
-              <View style={styles.card}>
+              <View style={styles.glassCard}>
                 <Text style={styles.fieldLabel}>Recipient address</Text>
                 <Animated.View
                   style={[
@@ -402,7 +481,7 @@ export function SendScreen() {
           {/* ── Confirm ── */}
           {step === 'confirm' && (
             <>
-              <View style={[styles.card, { gap: 14 }]}>
+              <View style={[styles.glassCard, { gap: 14 }]}>
                 <ConfirmRow label="To"     value={toAddress}             mono />
                 <ConfirmRow label="Amount" value={`${irmStr(amountSats)} IRM`} />
                 <ConfirmRow label="Fee"    value={`${irmStr(feeSats)} IRM`} />
@@ -423,6 +502,96 @@ export function SendScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ── QR Scanner Modal ── */}
+      <Modal
+        visible={scannerVisible}
+        animationType="slide"
+        onRequestClose={() => setScannerVisible(false)}
+      >
+        <View style={styles.scanRoot}>
+          {/* Camera fills entire screen */}
+          <CameraView
+            style={StyleSheet.absoluteFillObject}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            onBarcodeScanned={handleScan}
+          />
+
+          {/* Dark overlay — 4 strips around cutout */}
+          {/* Top strip */}
+          <View style={[styles.scanOverlay, { top: 0, left: 0, right: 0, height: CUTOUT_Y }]} />
+          {/* Bottom strip */}
+          <View style={[styles.scanOverlay, { top: CUTOUT_Y + CUTOUT, left: 0, right: 0, bottom: 0 }]} />
+          {/* Left strip */}
+          <View style={[styles.scanOverlay, { top: CUTOUT_Y, left: 0, width: CUTOUT_X, height: CUTOUT }]} />
+          {/* Right strip */}
+          <View style={[styles.scanOverlay, { top: CUTOUT_Y, right: 0, left: CUTOUT_X + CUTOUT, height: CUTOUT }]} />
+
+          {/* Pulsing border on cutout */}
+          <Animated.View
+            style={[
+              styles.scanCutoutBorder,
+              { left: CUTOUT_X, top: CUTOUT_Y, opacity: scanPulse },
+            ]}
+          />
+
+          {/* Corner brackets */}
+          <View style={[styles.corner, styles.cornerTL, { left: CUTOUT_X, top: CUTOUT_Y }]} />
+          <View style={[styles.corner, styles.cornerTR, { left: CUTOUT_X + CUTOUT - 24, top: CUTOUT_Y }]} />
+          <View style={[styles.corner, styles.cornerBL, { left: CUTOUT_X, top: CUTOUT_Y + CUTOUT - 24 }]} />
+          <View style={[styles.corner, styles.cornerBR, { left: CUTOUT_X + CUTOUT - 24, top: CUTOUT_Y + CUTOUT - 24 }]} />
+
+          {/* Label above cutout */}
+          <View style={[styles.scanLabelAbove, { top: CUTOUT_Y - 52 }]}>
+            <Text style={styles.scanTitle}>Scan Irium Address</Text>
+          </View>
+
+          {/* Error message */}
+          {scanError && (
+            <View style={[styles.scanErrorBanner, { top: CUTOUT_Y + CUTOUT + 20 }]}>
+              <Ionicons name="warning-outline" size={16} color={Colors.danger} style={{ marginRight: 6 }} />
+              <Text style={styles.scanErrorText}>{scanError}</Text>
+            </View>
+          )}
+
+          {/* Paste button below cutout */}
+          <Pressable
+            onPress={async () => {
+              try {
+                const text = await Clipboard.getStringAsync();
+                const trimmed = (text ?? '').trim();
+                if (!trimmed) {
+                  setScanError('Clipboard is empty');
+                  return;
+                }
+                setToAddress(trimmed);
+                validateAddress(trimmed);
+                hasScanned.current = true;
+                setScannerVisible(false);
+                setScanError(null);
+              } catch (e: any) {
+                setScanError('Failed to read clipboard');
+              }
+            }}
+            hitSlop={20}
+            style={({ pressed }) => [
+              styles.scanPasteBtn,
+              { top: CUTOUT_Y + CUTOUT + (scanError ? 80 : 28), opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <View style={styles.scanPasteInner}>
+              <Ionicons name="clipboard-outline" size={16} color={Colors.primary} />
+              <Text style={styles.scanPasteText}>Or paste address</Text>
+            </View>
+          </Pressable>
+
+          {/* Close button */}
+          <Pressable onPress={() => setScannerVisible(false)} style={styles.scanClose}>
+            <Ionicons name="close" size={26} color="#FFFFFF" />
+          </Pressable>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -430,15 +599,59 @@ export function SendScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
+  root: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 20, paddingBottom: 60, gap: 14 },
 
+  // Modal header
+  handleBar: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  modalTitleRow: {
+    paddingHorizontal: 20,
+    paddingBottom: 6,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontFamily: Fonts.bold,
+    color: Colors.textPrimary,
+    letterSpacing: 0.2,
+  },
+
+  // Glass card surface
   card: {
     backgroundColor: Colors.card,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: 16,
+  },
+  glassCard: {
+    backgroundColor: 'rgba(10,10,26,0.92)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.borderSubtle,
+    padding: 16,
+  },
+
+  // Amount underline (gradient line below the 52px number)
+  amountUnderlineWrap: {
+    width: '70%',
+    height: 2,
+    marginTop: 4,
+    marginBottom: 8,
+    borderRadius: 1,
+    overflow: 'hidden',
+  },
+  amountUnderline: {
+    flex: 1,
+    height: 2,
+    borderRadius: 1,
   },
 
   fieldLabel: {
@@ -451,14 +664,15 @@ const styles = StyleSheet.create({
   },
 
   // Amount section
-  amountSection: { alignItems: 'center', paddingVertical: 8 },
+  amountSection: { alignItems: 'center', paddingVertical: 10 },
   amountInput: {
-    fontSize: 48,
+    fontSize: 52,
     fontFamily: Fonts.bold,
-    color: Colors.text,
-    minWidth: 160,
+    color: '#FFFFFF',
+    minWidth: 200,
     textAlign: 'center',
     paddingVertical: 4,
+    letterSpacing: -1,
   },
   unitToggle: {
     marginTop: 8,
@@ -483,18 +697,18 @@ const styles = StyleSheet.create({
   feeRow: { flexDirection: 'row', gap: 8 },
   feePill: {
     flex: 1,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.borderSubtle,
+    paddingVertical: 12,
     paddingHorizontal: 6,
     alignItems: 'center',
     gap: 3,
-    backgroundColor: Colors.bg,
+    backgroundColor: 'rgba(255,255,255,0.03)',
   },
   feePillActive: {
     borderColor: Colors.primary,
-    backgroundColor: Colors.primary + '18',
+    backgroundColor: 'rgba(123,47,255,0.18)',
   },
   feePillLabel: {
     fontSize: 12,
@@ -517,22 +731,26 @@ const styles = StyleSheet.create({
   inputWrap: {
     borderRadius: 10,
     borderWidth: 1.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   input: {
-    flex: 1,
+    width: '100%',
     backgroundColor: Colors.bg,
     padding: 13,
+    paddingRight: 84,
     color: Colors.text,
     fontSize: 14,
     fontFamily: Fonts.regular,
+    borderRadius: 8,
   },
   inputActions: {
+    position: 'absolute',
+    right: 6,
+    top: 0,
+    bottom: 0,
     flexDirection: 'row',
-    paddingRight: 8,
-    gap: 4,
+    alignItems: 'center',
+    gap: 2,
     backgroundColor: Colors.bg,
   },
   inputIconBtn: { padding: 6 },
@@ -550,6 +768,79 @@ const styles = StyleSheet.create({
   },
 
   divider: { height: 1, backgroundColor: Colors.border },
+
+  // QR scanner modal
+  scanRoot: { flex: 1, backgroundColor: '#000' },
+  scanOverlay: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.72)' },
+  scanCutoutBorder: {
+    position: 'absolute',
+    width: CUTOUT,
+    height: CUTOUT,
+    borderWidth: 2,
+    borderColor: '#7B2FFF',
+    borderRadius: 12,
+  },
+  // Corner brackets (L-shapes)
+  corner: { position: 'absolute', width: 24, height: 24 },
+  cornerTL: { borderTopWidth: 3, borderLeftWidth: 3, borderColor: '#7B2FFF', borderTopLeftRadius: 6 },
+  cornerTR: { borderTopWidth: 3, borderRightWidth: 3, borderColor: '#7B2FFF', borderTopRightRadius: 6 },
+  cornerBL: { borderBottomWidth: 3, borderLeftWidth: 3, borderColor: '#7B2FFF', borderBottomLeftRadius: 6 },
+  cornerBR: { borderBottomWidth: 3, borderRightWidth: 3, borderColor: '#7B2FFF', borderBottomRightRadius: 6 },
+  scanLabelAbove: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  scanTitle: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.semiBold,
+    fontSize: 16,
+    letterSpacing: 0.3,
+  },
+  scanErrorBanner: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    backgroundColor: 'rgba(26,0,0,0.95)',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.danger,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scanErrorText: { color: Colors.danger, fontFamily: Fonts.semiBold, fontSize: 13, flex: 1 },
+  scanPasteBtn: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    alignItems: 'center',
+  },
+  scanPasteInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    backgroundColor: 'rgba(123,47,255,0.18)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  scanPasteText: {
+    color: Colors.primary,
+    fontFamily: Fonts.semiBold,
+    fontSize: 14,
+  },
+  scanClose: {
+    position: 'absolute',
+    top: 52,
+    right: 24,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderRadius: 22,
+    padding: 10,
+  },
 
   // Success screen
   successBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },

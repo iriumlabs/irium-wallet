@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useRoute, type RouteProp } from '@react-navigation/native';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  StatusBar, Alert, TouchableOpacity, ActivityIndicator,
+  StatusBar, Alert, TouchableOpacity, ActivityIndicator, Animated,
 } from 'react-native';
+import { useScreenEnter } from '../hooks/useScreenEnter';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -17,6 +19,7 @@ import { Colors, Typography, Fonts } from '../components/theme';
 import type { SettlementStackParams } from '../navigation/SettlementNavigator';
 
 type Nav = NativeStackNavigationProp<SettlementStackParams, 'OtcWizard'>;
+type RouteParams = RouteProp<SettlementStackParams, 'OtcWizard'>;
 type Role = 'buyer' | 'seller';
 type Step = 1 | 2 | 3 | 4 | 5;
 
@@ -24,6 +27,9 @@ function irmStr(sats: number) { return (sats / 1e8).toFixed(8); }
 
 export function OtcWizardScreen() {
   const nav = useNavigation<Nav>();
+  const route = useRoute<RouteParams>();
+  const prefill = route.params?.prefill;
+  const enterStyle = useScreenEnter();
   const { seedHex, address } = useWalletStore();
   const { nodeStatus } = useNodeStore();
   const { addAgreement } = useSettlementStore();
@@ -44,6 +50,21 @@ export function OtcWizardScreen() {
   const [secretHashHex, setSecretHashHex] = useState('');
   const [htlcScriptHex, setHtlcScriptHex] = useState('');
   const [agreementId, setAgreementId] = useState('');
+
+  // Prefill from marketplace offer
+  useEffect(() => {
+    if (!prefill) return;
+    // Taking an offer = the user is the buyer (payer), counterparty is the seller (payee)
+    setRole('buyer');
+    setCounterpartyAddr(prefill.sellerAddress);
+    setAmountIrm((prefill.amountSats / 1e8).toString());
+    if (prefill.paymentMethod) setPaymentMethod(prefill.paymentMethod);
+    if (prefill.timeoutHeight && nodeStatus?.height) {
+      const blocks = Math.max(1, prefill.timeoutHeight - nodeStatus.height);
+      setTimeoutBlocks(String(blocks));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill?.offerId]);
 
   const amountSats = Math.floor(parseFloat(amountIrm || '0') * 1e8);
   const timeoutHeight = (nodeStatus?.height ?? 45000) + parseInt(timeoutBlocks || '144', 10);
@@ -127,6 +148,7 @@ export function OtcWizardScreen() {
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
+      <Animated.View style={enterStyle}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Back button */}
         <TouchableOpacity onPress={goBack} style={styles.back}>
@@ -313,6 +335,7 @@ export function OtcWizardScreen() {
           </View>
         )}
       </ScrollView>
+      </Animated.View>
     </SafeAreaView>
   );
 }

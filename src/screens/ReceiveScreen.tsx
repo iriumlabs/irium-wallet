@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { bridge } from '../bridge';
 import { useWalletStore } from '../store/wallet';
+import { AddressPicker } from '../components/AddressPicker';
 import { Colors, GradientColors, Typography, Fonts } from '../components/theme';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -41,10 +42,11 @@ function AddressHighlight({ addr }: { addr: string }) {
 
 export function ReceiveScreen() {
   const { seedHex, address, setAddress, addressIndex, setAddressIndex } = useWalletStore();
-  const [currentAddr, setCurrentAddr] = useState(address ?? '');
-  const [loading, setLoading]         = useState(!address);
-  const [error, setError]             = useState<string | null>(null);
-  const [copyFlash, setCopyFlash]     = useState(false);
+  const [currentAddr, setCurrentAddr]         = useState(address ?? '');
+  const [loading, setLoading]                 = useState(!address);
+  const [error, setError]                     = useState<string | null>(null);
+  const [copyFlash, setCopyFlash]             = useState(false);
+  const [pickerVisible, setPickerVisible]     = useState(false);
 
   // QR fade + scale
   const qrScale   = useRef(new Animated.Value(0.85)).current;
@@ -111,8 +113,9 @@ export function ReceiveScreen() {
     await Share.share({ message: currentAddr });
   }
 
-  function nextAddress() {
-    setAddressIndex(addressIndex + 1);
+  function selectAddress(index: number) {
+    setAddressIndex(index);
+    setPickerVisible(false);
   }
 
   const pressCopy   = () => Animated.spring(copyScale, { toValue: 0.96, friction: 8, useNativeDriver: true }).start();
@@ -122,46 +125,72 @@ export function ReceiveScreen() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
-      <Text style={[Typography.h2, styles.title]}>Receive IRM</Text>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
 
-      {/* ── QR card ── */}
-      <View style={styles.qrCard}>
-        {loading ? (
-          <View style={styles.qrPlaceholder}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-          </View>
-        ) : error ? (
-          <View style={styles.qrPlaceholder}>
-            <Text style={{ color: Colors.danger, textAlign: 'center', fontSize: 13 }}>{error}</Text>
-          </View>
-        ) : currentAddr ? (
-          <Animated.View
-            style={{ transform: [{ scale: qrScale }], opacity: qrOpacity, position: 'relative' }}
-          >
-            {/* White background frame for QR */}
-            <View style={styles.qrFrame}>
-              <QRCode
-                value={currentAddr}
-                size={240}
-                color="#000000"
-                backgroundColor="#FFFFFF"
-                ecl="H"
-              />
-              {/* Purple scan line */}
-              <Animated.View
-                style={[
-                  styles.scanLine,
-                  { transform: [{ translateY: scanY }] },
-                ]}
-                pointerEvents="none"
-              />
-            </View>
-          </Animated.View>
-        ) : (
-          <View style={styles.qrPlaceholder} />
-        )}
+      {/* Modal handle bar */}
+      <View style={styles.handleBar} />
+      <View style={styles.titleRow}>
+        <Text style={styles.titleText}>Receive IRM</Text>
       </View>
+
+      {/* ── QR card with gradient border ── */}
+      <Animated.View
+        style={{
+          transform: [{ scale: qrScale }],
+          opacity: qrOpacity,
+          alignItems: 'center',
+          marginTop: 8,
+        }}
+      >
+        <LinearGradient
+          colors={GradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.qrBorder}
+        >
+          <View style={styles.qrCard}>
+            {loading ? (
+              <View style={styles.qrPlaceholder}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            ) : error ? (
+              <View style={styles.qrPlaceholder}>
+                <Text style={{ color: Colors.danger, textAlign: 'center', fontSize: 13 }}>{error}</Text>
+              </View>
+            ) : currentAddr ? (
+              <View style={styles.qrFrame}>
+                <QRCode
+                  value={currentAddr}
+                  size={232}
+                  color="#000000"
+                  backgroundColor="#FFFFFF"
+                  ecl="H"
+                />
+                {/* Irium logo overlay in center of QR */}
+                <View style={styles.qrLogoOverlay} pointerEvents="none">
+                  <View style={styles.qrLogoBackground}>
+                    <Animated.Image
+                      source={require('../../assets/irium-logo-transparent.png')}
+                      style={styles.qrLogoImg}
+                      resizeMode="contain"
+                    />
+                  </View>
+                </View>
+                {/* Purple scan line */}
+                <Animated.View
+                  style={[
+                    styles.scanLine,
+                    { transform: [{ translateY: scanY }] },
+                  ]}
+                  pointerEvents="none"
+                />
+              </View>
+            ) : (
+              <View style={styles.qrPlaceholder} />
+            )}
+          </View>
+        </LinearGradient>
+      </Animated.View>
 
       {/* ── Address display ── */}
       <View style={styles.addrCard}>
@@ -214,10 +243,19 @@ export function ReceiveScreen() {
         </Pressable>
       </View>
 
-      {/* ── Next address ── */}
-      <Pressable onPress={nextAddress} style={styles.nextAddrBtn}>
-        <Text style={styles.nextAddrText}>Next address →</Text>
+      {/* ── Change Address ── */}
+      <Pressable onPress={() => setPickerVisible(true)} style={styles.changeAddrBtn}>
+        <Ionicons name="wallet-outline" size={16} color={Colors.primary} style={{ marginRight: 6 }} />
+        <Text style={styles.changeAddrText}>Change Address</Text>
       </Pressable>
+
+      <AddressPicker
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        onSelect={selectAddress}
+        currentIndex={addressIndex}
+        seedHex={seedHex}
+      />
     </SafeAreaView>
   );
 }
@@ -225,28 +263,73 @@ export function ReceiveScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
-  title: { margin: 24, marginBottom: 16 },
+  root: { flex: 1, backgroundColor: Colors.background },
 
-  // QR card
+  // Modal header
+  handleBar: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  titleRow: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  titleText: {
+    fontSize: 22,
+    fontFamily: Fonts.bold,
+    color: Colors.textPrimary,
+    letterSpacing: 0.2,
+  },
+
+  // Gradient border around QR card
+  qrBorder: {
+    padding: 2,
+    borderRadius: 22,
+  },
   qrCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.background,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginHorizontal: 24,
-    paddingVertical: 28,
+    padding: 24,
   },
-  qrPlaceholder: { width: 240, height: 240, alignItems: 'center', justifyContent: 'center' },
+  qrPlaceholder: { width: 232, height: 232, alignItems: 'center', justifyContent: 'center' },
   qrFrame: {
-    width: 240,
-    height: 240,
+    width: 232,
+    height: 232,
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
+    borderRadius: 8,
     overflow: 'hidden',
     position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Irium logo overlaid in QR center (40x40 with white background)
+  qrLogoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrLogoBackground: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  qrLogoImg: {
+    width: 40,
+    height: 40,
   },
   scanLine: {
     position: 'absolute',
@@ -305,9 +388,9 @@ const styles = StyleSheet.create({
   btnSecondary: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: Colors.card,
+    backgroundColor: 'rgba(10,10,26,0.85)',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.primary + '40',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
@@ -319,15 +402,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  // Next address
-  nextAddrBtn: {
+  // Change address button
+  changeAddrBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 24,
     marginTop: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  nextAddrText: {
-    color: Colors.textSecondary,
+  changeAddrText: {
+    color: Colors.primary,
     fontFamily: Fonts.semiBold,
     fontSize: 14,
   },
+
 });

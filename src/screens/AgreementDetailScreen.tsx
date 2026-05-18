@@ -1,8 +1,9 @@
 import React from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  StatusBar, Alert, TouchableOpacity,
+  StatusBar, Alert, TouchableOpacity, Animated,
 } from 'react-native';
+import { useScreenEnter } from '../hooks/useScreenEnter';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,6 +42,7 @@ interface TimelineStep {
 
 export function AgreementDetailScreen({ route, navigation }: Props) {
   const { agreementId } = route.params;
+  const enterStyle = useScreenEnter();
   const agreements = useSettlementStore((s) => s.agreements);
   const agreement = agreements.find((a) => a.id === agreementId);
 
@@ -96,6 +98,7 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
+      <Animated.View style={enterStyle}>
       <ScrollView contentContainerStyle={styles.content}>
         {/* Back button */}
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back}>
@@ -213,6 +216,7 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
           </View>
         )}
       </ScrollView>
+      </Animated.View>
     </SafeAreaView>
   );
 }

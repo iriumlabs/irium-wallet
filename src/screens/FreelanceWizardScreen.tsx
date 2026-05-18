@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  StatusBar, Alert, TouchableOpacity,
+  StatusBar, Alert, TouchableOpacity, Animated,
 } from 'react-native';
+import { useScreenEnter } from '../hooks/useScreenEnter';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -24,6 +25,7 @@ function irmStr(sats: number) { return (sats / 1e8).toFixed(8); }
 
 export function FreelanceWizardScreen() {
   const nav = useNavigation<Nav>();
+  const enterStyle = useScreenEnter();
   const { seedHex, address } = useWalletStore();
   const { nodeStatus } = useNodeStore();
   const { addAgreement } = useSettlementStore();
@@ -125,6 +127,7 @@ export function FreelanceWizardScreen() {
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
+      <Animated.View style={enterStyle}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <TouchableOpacity onPress={goBack} style={styles.back}>
           <Ionicons name="arrow-back" size={20} color={Colors.primary} />
@@ -250,6 +253,7 @@ export function FreelanceWizardScreen() {
           </View>
         )}
       </ScrollView>
+      </Animated.View>
     </SafeAreaView>
   );
 }

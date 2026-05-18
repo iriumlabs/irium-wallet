@@ -1,7 +1,19 @@
 import type { SpvBridge, Utxo, BalanceInfo, NodeStatus, TxRecord, HtlcInfo, AgreementParams, LightClientConfig, WifKey } from './types';
 
 // Deterministic mock addresses for testability
-const MOCK_ADDRESS = 'QmockAddr1234567890abcdef1234567890abcdef';
+const MOCK_ADDRESS = 'Q8XbJ3h37uUSPnXdBBG3DsXWhzRiDshaPz';
+const MOCK_ADDR_LIST = [
+  'Q8XbJ3h37uUSPnXdBBG3DsXWhzRiDshaPz',
+  'Q9aKmRx7uvWPnXdBBG3DsXWhzRiKpL4hY9',
+  'QXn4hRz9pK3tL8mVjBDsXWhzRiDqM2nA8c',
+  'QwLpN5jK8tHxV2bWdN3PaXY1RmZqDnPa7b',
+  'QrTqB6vS9mPzL3kJfXcU4eGRoYpDhKqV2x',
+  'QYx2mNvL7fAjZ8wCkRpSqMnTeJrUbDfV4z',
+  'QmZpR4hAj3WnXeKbLsTcVdQoUiPyDfGv2n',
+  'QbCkV9nJp6mZwHqLsTdRcXoYiPaUfGxW8e',
+  'QnMrK5hLp8tVwGqJxBzNkRoUcPfDgYxA3m',
+  'QvWqJ4nLkP7mZtHbXcRdUoYiPaSgFvK2xJ',
+];
 const MOCK_SEED_HEX = 'deadbeef'.repeat(8);
 // 24 words — matches Mnemonic::generate(24) in irium-wallet.rs (256-bit entropy)
 const MOCK_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art';
@@ -40,21 +52,24 @@ export const mockBridge: SpvBridge = {
 
   async deriveAddress(seedHex, index) {
     await delay(100);
-    return MOCK_ADDRESS;
+    return MOCK_ADDR_LIST[index % MOCK_ADDR_LIST.length];
   },
 
   async derivePrivkeyHex(seedHex, index) {
     await delay(100);
-    return 'cc'.repeat(32);
+    const byte = (index % 256).toString(16).padStart(2, '0');
+    return byte.repeat(32);
   },
 
   validateAddress(address) {
     return address.startsWith('Q') && address.length >= 26;
   },
 
-  async exportWif(_seedHex, _index) {
+  async exportWif(_seedHex, index) {
     await delay(100);
-    return '5HueCGU8rMjxECyDialwujzDmgGSzbPyhDGkFKLVkMxiDpYGfEA'; // mock WIF
+    const base = '5HueCGU8rMjxECyDialwujzDmgGSzbPyhDGkFKLVkMxiDpYGf';
+    const suffix = String.fromCharCode(65 + (index % 26)).repeat(2);
+    return base + suffix;
   },
 
   async importWif(_wif): Promise<WifKey> {

@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { bridge } from '../bridge';
 import { useWalletStore } from '../store/wallet';
 import { Colors, Typography, Fonts } from '../components/theme';
+import { useScreenEnter } from '../hooks/useScreenEnter';
 import type { TxRecord } from '../bridge/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -106,6 +107,7 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export function HistoryScreen() {
+  const enterStyle = useScreenEnter();
   const { address, rpcUrl, authToken, history, setHistory } = useWalletStore();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading]       = useState(history.length === 0);
@@ -170,6 +172,7 @@ export function HistoryScreen() {
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
+      <Animated.View style={enterStyle}>
       <Text style={[Typography.h2, styles.title]}>History</Text>
 
       {/* ── Filter tabs ── */}
@@ -223,6 +226,7 @@ export function HistoryScreen() {
           )}
         />
       )}
+      </Animated.View>
 
       {/* ── Bottom sheet modal ── */}
       <Modal

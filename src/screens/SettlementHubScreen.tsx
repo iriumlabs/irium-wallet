@@ -1,48 +1,40 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  StatusBar,
-  TouchableOpacity,
-  Animated,
-  Alert,
+  View, Text, StyleSheet, ScrollView, StatusBar,
+  TouchableOpacity, Animated, Alert, Pressable, Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { SwipeableRow } from '../components/SwipeableRow';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSettlementStore, SavedAgreement } from '../store/settlement';
-import { Card } from '../components/Card';
+import { useNodeStore } from '../store/node';
 import { Colors, Typography, Fonts, GradientColors } from '../components/theme';
 import type { SettlementStackParams } from '../navigation/SettlementNavigator';
 
 type Nav = NativeStackNavigationProp<SettlementStackParams, 'Hub'>;
-type HubTab = 'active' | 'history' | 'templates';
+type HubTab = 'templates' | 'active' | 'history';
 
 function irmStr(sats: number) {
-  return (sats / 1e8).toFixed(8) + ' IRM';
+  return (sats / 1e8).toFixed(8);
 }
 
+// New status colors per spec
 const STATUS_COLORS: Record<string, string> = {
-  draft: '#F59E0B',
-  funded: '#3B5BDB',
-  complete: '#10B981',
-  expired: '#6B7280',
+  draft:    '#F59E0B', // pending
+  funded:   '#3B5BDB', // funded
+  complete: '#10B981', // released
+  expired:  '#6B7280', // refunded
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: 'Pending',
-  funded: 'Funded',
+  draft:    'Pending',
+  funded:   'Funded',
   complete: 'Released',
-  expired: 'Refunded',
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  otc: 'OTC',
-  'simple-settlement': 'Freelance',
+  expired:  'Refunded',
 };
 
 function truncateAddress(addr: string): string {
@@ -50,46 +42,82 @@ function truncateAddress(addr: string): string {
   return addr.slice(0, 8) + '…' + addr.slice(-6);
 }
 
-function deadlineLabel(timeoutHeight: number): string {
-  if (timeoutHeight <= 0) return 'Expired';
-  return `Block ${timeoutHeight.toLocaleString()}`;
-}
-
-// 3-step progress: Created → Funded → Released
+// 3-step progress: Funded → Proof → Released
 function getProgressStep(status: string): number {
-  if (status === 'draft') return 0;
-  if (status === 'funded') return 1;
-  if (status === 'complete' || status === 'expired') return 2;
+  if (status === 'draft')    return 0; // not funded yet
+  if (status === 'funded')   return 1; // funded, awaiting proof
+  if (status === 'complete') return 3; // fully released
+  if (status === 'expired')  return 2; // refunded (proof submitted but released back)
   return 0;
 }
 
-function AgreementCard({ agreement, index, onDetails }: {
+// Live countdown — blocks → human label updated every second.
+function useLiveCountdown(timeoutHeight: number) {
+  const { nodeStatus } = useNodeStore();
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const currentHeight = nodeStatus?.height ?? 0;
+  const blocksLeft = Math.max(0, timeoutHeight - currentHeight);
+  if (blocksLeft <= 0) {
+    return { label: 'Expired', danger: true, tick };
+  }
+
+  // ~2 min per block
+  const totalSeconds = blocksLeft * 120;
+  const days  = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const mins  = Math.floor((totalSeconds % 3600) / 60);
+  // Use tick to feign "live" feel even though block height drives actual countdown.
+  const secs  = (60 - (tick % 60)) % 60;
+
+  let label: string;
+  if (days > 0)    label = `${days}d ${hours}h ${mins}m`;
+  else if (hours > 0) label = `${hours}h ${mins}m ${secs}s`;
+  else if (mins > 0)  label = `${mins}m ${secs}s`;
+  else                label = `${secs}s`;
+
+  const danger = totalSeconds < 3600;
+  return { label, danger, tick };
+}
+
+// ─── Agreement card (Active + History) ───────────────────────────────────────
+
+function AgreementCard({ agreement, index, isHistory, onDetails }: {
   agreement: SavedAgreement;
   index: number;
+  isHistory?: boolean;
   onDetails: () => void;
 }) {
-  const slideX = useRef(new Animated.Value(20)).current;
+  const slideX  = useRef(new Animated.Value(20)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const { label: countdownLabel, danger: countdownDanger } = useLiveCountdown(agreement.timeoutHeight);
 
   useEffect(() => {
     Animated.sequence([
       Animated.delay(index * 80),
       Animated.parallel([
-        Animated.timing(slideX, { toValue: 0, duration: 280, useNativeDriver: true }),
+        Animated.timing(slideX,  { toValue: 0, duration: 280, useNativeDriver: true }),
         Animated.timing(opacity, { toValue: 1, duration: 280, useNativeDriver: true }),
       ]),
     ]).start();
 
-    const stepFraction = getProgressStep(agreement.status) / 2;
+    const stepFraction = getProgressStep(agreement.status) / 3;
     Animated.sequence([
       Animated.delay(index * 80 + 200),
       Animated.timing(progressAnim, {
         toValue: stepFraction,
-        duration: 600,
+        duration: 700,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }),
     ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const barWidth = progressAnim.interpolate({
@@ -99,79 +127,193 @@ function AgreementCard({ agreement, index, onDetails }: {
 
   const statusColor = STATUS_COLORS[agreement.status] ?? Colors.textSecondary;
   const statusLabel = STATUS_LABELS[agreement.status] ?? agreement.status;
-  const typeLabel = TYPE_LABELS[agreement.template] ?? agreement.template;
   const progressStep = getProgressStep(agreement.status);
-  const STEPS = ['Created', 'Funded', 'Released'];
+  const STEPS = ['Funded', 'Proof', 'Released'];
 
   return (
-    <Animated.View style={{ opacity, transform: [{ translateX: slideX }], marginBottom: 12 }}>
-      <Card>
-        {/* Header row: type badge + status badge */}
-        <View style={styles.cardHeader}>
-          <View style={[styles.typeBadge]}>
-            <Text style={styles.typeBadgeText}>{typeLabel}</Text>
+    <Animated.View style={{ opacity, transform: [{ translateX: slideX }] }}>
+      <TouchableOpacity activeOpacity={0.85} onPress={onDetails} style={agStyles.card}>
+        {/* Gradient top border — same as dashboard hero */}
+        {!isHistory && (
+          <LinearGradient
+            colors={GradientColors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={agStyles.topBorder}
+          />
+        )}
+
+        {/* Header: status badge + countdown */}
+        <View style={agStyles.headerRow}>
+          <View style={[agStyles.statusBadge, { borderColor: statusColor }]}>
+            <View style={[agStyles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[agStyles.statusText, { color: statusColor }]}>{statusLabel}</Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: statusColor + '22', borderColor: statusColor }]}>
-            <Text style={[styles.statusBadgeText, { color: statusColor }]}>{statusLabel}</Text>
-          </View>
-        </View>
-
-        {/* Amount */}
-        <Text style={styles.amount}>{irmStr(agreement.amountSats)}</Text>
-
-        {/* Counterparty */}
-        <Text style={styles.counterparty}>{truncateAddress(agreement.counterpartyAddress)}</Text>
-
-        {/* Deadline */}
-        <Text style={[Typography.caption, { marginBottom: 10 }]}>
-          {deadlineLabel(agreement.timeoutHeight)}
-        </Text>
-
-        {/* Progress bar with 3 steps */}
-        <View style={styles.progressStepsRow}>
-          {STEPS.map((label, i) => (
-            <View key={i} style={styles.progressStepItem}>
-              <View style={[
-                styles.progressDot,
-                i <= progressStep
-                  ? { backgroundColor: Colors.primary }
-                  : { backgroundColor: Colors.border },
-              ]} />
-              <Text style={[styles.progressLabel, i <= progressStep && { color: Colors.textPrimary }]}>
-                {label}
+          {!isHistory && (
+            <View style={agStyles.countdownBox}>
+              <Ionicons
+                name="time-outline"
+                size={12}
+                color={countdownDanger ? Colors.danger : Colors.accent}
+              />
+              <Text style={[
+                agStyles.countdownText,
+                { color: countdownDanger ? Colors.danger : Colors.accent },
+              ]}>
+                {countdownLabel}
               </Text>
             </View>
-          ))}
-        </View>
-        <View style={styles.progressTrack}>
-          <Animated.View style={[styles.progressBar, { width: barWidth }]} />
+          )}
+          {isHistory && (
+            <Text style={agStyles.historyTime}>
+              Block #{agreement.timeoutHeight.toLocaleString()}
+            </Text>
+          )}
         </View>
 
-        {/* Quick action buttons */}
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[styles.actionBtn, { borderColor: Colors.success }]}
-            onPress={() => Alert.alert('Release', 'Enter secret to release funds (placeholder)')}
-          >
-            <Text style={[styles.actionBtnText, { color: Colors.success }]}>Release</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, { borderColor: Colors.danger }]}
-            onPress={() => Alert.alert('Refund', 'Refund requested (placeholder)')}
-          >
-            <Text style={[styles.actionBtnText, { color: Colors.danger }]}>Refund</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, { borderColor: Colors.primary }]}
-            onPress={onDetails}
-          >
-            <Text style={[styles.actionBtnText, { color: Colors.primary }]}>Details</Text>
-          </TouchableOpacity>
+        {/* Amount — gradient text via overlay (no MaskedView available) */}
+        <View style={agStyles.amountRow}>
+          <Text style={[agStyles.amountValue, isHistory && agStyles.faded]}>
+            {irmStr(agreement.amountSats)}
+          </Text>
+          <Text style={[agStyles.amountUnit, isHistory && agStyles.faded]}>IRM</Text>
         </View>
-      </Card>
+
+        {/* Counterparty */}
+        <View style={agStyles.cpRow}>
+          <Ionicons name="person-circle-outline" size={13} color={Colors.textMuted} />
+          <Text style={agStyles.cpText} selectable>
+            {truncateAddress(agreement.counterpartyAddress)}
+          </Text>
+        </View>
+
+        {/* Progress bar with 3 steps */}
+        <View style={agStyles.progressStepsRow}>
+          {STEPS.map((label, i) => {
+            const filled = i < progressStep;
+            return (
+              <View key={i} style={agStyles.progressStepItem}>
+                <View style={[
+                  agStyles.progressDot,
+                  filled ? { backgroundColor: Colors.primary } : { backgroundColor: Colors.border },
+                  isHistory && { opacity: 0.5 },
+                ]} />
+                <Text style={[
+                  agStyles.progressLabel,
+                  filled && { color: Colors.textPrimary },
+                  isHistory && { opacity: 0.55 },
+                ]}>{label}</Text>
+              </View>
+            );
+          })}
+        </View>
+        <View style={[agStyles.progressTrack, isHistory && { opacity: 0.5 }]}>
+          <Animated.View style={[
+            agStyles.progressBar,
+            { width: barWidth, backgroundColor: isHistory ? Colors.textMuted : Colors.primary },
+          ]} />
+        </View>
+      </TouchableOpacity>
     </Animated.View>
   );
 }
+
+const agStyles = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.borderSubtle,
+    padding: 16,
+    overflow: 'hidden',
+  },
+  topBorder: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, height: 1.5,
+  },
+
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 10, fontFamily: Fonts.semiBold, letterSpacing: 0.6 },
+  countdownBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  countdownText: { fontSize: 12, fontFamily: Fonts.semiBold, letterSpacing: 0.3 },
+  historyTime: { fontSize: 11, fontFamily: Fonts.regular, color: Colors.textMuted },
+
+  amountRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    marginBottom: 4,
+  },
+  amountValue: {
+    fontSize: 26,
+    fontFamily: Fonts.bold,
+    // The "gradient text" effect uses the gradient start color as the dominant tone.
+    // Per-letter interpolation would require splitting; for a numeric amount we use a
+    // gradient-like tint that visually pops on dark backgrounds.
+    color: Colors.accent,
+    letterSpacing: -0.5,
+    textShadowColor: Colors.primary + '50',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+  },
+  amountUnit: {
+    fontSize: 12,
+    fontFamily: Fonts.semiBold,
+    color: Colors.textSecondary,
+    letterSpacing: 2,
+  },
+  faded: { opacity: 0.55 },
+
+  cpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 14,
+  },
+  cpText: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+
+  progressStepsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  progressStepItem: { alignItems: 'center', flex: 1 },
+  progressDot: { width: 7, height: 7, borderRadius: 4, marginBottom: 4 },
+  progressLabel: { fontSize: 10, color: Colors.textSecondary, fontFamily: Fonts.regular },
+  progressTrack: {
+    height: 3,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBar: { height: 3, borderRadius: 2 },
+});
+
+// ─── Template card ───────────────────────────────────────────────────────────
 
 interface TemplateItem {
   title: string;
@@ -180,31 +322,125 @@ interface TemplateItem {
   onPress: () => void;
 }
 
-function TemplatePickerCard({ item }: { item: TemplateItem }) {
+function TemplateCard({ item, index }: { item: TemplateItem; index: number }) {
+  const scale   = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const y       = useRef(new Animated.Value(16)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(index * 60),
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 1, duration: 280, useNativeDriver: true }),
+        Animated.timing(y,       { toValue: 0, duration: 280, useNativeDriver: true }),
+      ]),
+    ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handlePress() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    item.onPress();
+  }
+
   return (
-    <TouchableOpacity onPress={item.onPress} activeOpacity={0.8} style={{ marginBottom: 12 }}>
-      <Card>
-        <View style={styles.templateRow}>
-          <View style={styles.templateIconWrap}>
-            <Ionicons name={item.icon} size={24} color={Colors.primary} />
+    <Animated.View style={{ opacity, transform: [{ translateY: y }, { scale }], marginBottom: 12 }}>
+      <Pressable
+        onPress={handlePress}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.97, friction: 7, useNativeDriver: true }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, friction: 5, useNativeDriver: true }).start()}
+      >
+        <View style={tplStyles.card}>
+          {/* Gradient top border */}
+          <LinearGradient
+            colors={GradientColors}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={tplStyles.topBorder}
+          />
+
+          <View style={tplStyles.row}>
+            {/* Gradient icon background (purple→cyan at 45°) */}
+            <LinearGradient
+              colors={GradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={tplStyles.iconBox}
+            >
+              <Ionicons name={item.icon} size={24} color="#FFFFFF" />
+            </LinearGradient>
+
+            <View style={{ flex: 1 }}>
+              <Text style={tplStyles.title}>{item.title}</Text>
+              <Text style={tplStyles.subtitle}>{item.subtitle}</Text>
+            </View>
+
+            <Ionicons name="chevron-forward" size={18} color={Colors.textSecondary} />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.templateTitle}>{item.title}</Text>
-            <Text style={Typography.caption}>{item.subtitle}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={Colors.textSecondary} />
         </View>
-      </Card>
-    </TouchableOpacity>
+      </Pressable>
+    </Animated.View>
   );
 }
+
+const tplStyles = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.borderSubtle,
+    padding: 14,
+    overflow: 'hidden',
+  },
+  topBorder: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: 1.5,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 15,
+    fontFamily: Fonts.semiBold,
+    color: Colors.textPrimary,
+    marginBottom: 3,
+    letterSpacing: 0.2,
+  },
+  subtitle: {
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    color: Colors.textSecondary,
+  },
+});
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
 
 export function SettlementHubScreen() {
   const nav = useNavigation<Nav>();
   const { agreements, reset, loadAgreements } = useSettlementStore();
-  const [activeTab, setActiveTab] = useState<HubTab>('active');
+  const [activeTab, setActiveTab] = useState<HubTab>('templates');
+  const [openRowKey, setOpenRowKey] = useState<string | null>(null);
 
-  useEffect(() => { loadAgreements(); }, []);
+  // Top-level screen entrance
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    loadAgreements();
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const activeAgreements = agreements.filter(
     (a) => a.status === 'draft' || a.status === 'funded',
@@ -241,209 +477,156 @@ export function SettlementHubScreen() {
   ];
 
   const tabs: { key: HubTab; label: string }[] = [
-    { key: 'active', label: 'Active' },
-    { key: 'history', label: 'History' },
     { key: 'templates', label: 'Templates' },
+    { key: 'active',    label: 'Active' },
+    { key: 'history',   label: 'History' },
   ];
-
-  const displayList = activeTab === 'active' ? activeAgreements : historyAgreements;
 
   return (
     <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={Typography.h2}>Settlements</Text>
-          <Text style={[Typography.caption, { marginTop: 4 }]}>HTLC-based trustless agreements</Text>
-        </View>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
 
-        {/* Tab bar */}
-        <View style={styles.tabBar}>
-          {tabs.map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              style={[styles.tab, activeTab === t.key && styles.tabActive]}
-              onPress={() => setActiveTab(t.key)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.tabLabel, activeTab === t.key && styles.tabLabelActive]}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Active / History lists */}
-        {(activeTab === 'active' || activeTab === 'history') && (
-          <>
-            {displayList.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={[Typography.caption, { textAlign: 'center' }]}>
-                  {activeTab === 'active'
-                    ? 'No active agreements. Create one from the Templates tab.'
-                    : 'No past agreements yet.'}
-                </Text>
-              </View>
-            ) : (
-              displayList.map((a, i) => (
-                <AgreementCard
-                  key={a.id}
-                  agreement={a}
-                  index={i}
-                  onDetails={() => nav.push('AgreementDetail', { agreementId: a.id })}
-                />
-              ))
-            )}
-          </>
-        )}
-
-        {/* Templates tab */}
-        {activeTab === 'templates' && (
-          <View style={{ paddingTop: 4 }}>
-            <Text style={[Typography.caption, { marginBottom: 14 }]}>
-              Choose a settlement template to get started.
-            </Text>
-            {templates.map((t) => (
-              <TemplatePickerCard key={t.title} item={t} />
-            ))}
-          </View>
-        )}
-      </ScrollView>
-
-      {/* FAB */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setActiveTab('templates')}
-        activeOpacity={0.85}
+      <Animated.View
+        style={{
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+          flex: 1,
+        }}
       >
-        <LinearGradient
-          colors={GradientColors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.fabGradient}
+        <ScrollView
+          contentContainerStyle={styles.content}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={!openRowKey}
+          onScrollBeginDrag={() => setOpenRowKey(null)}
         >
-          <Text style={styles.fabIcon}>+</Text>
-        </LinearGradient>
-      </TouchableOpacity>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={Typography.h2}>Settlements</Text>
+            <Text style={[Typography.caption, { marginTop: 4 }]}>HTLC-based trustless agreements</Text>
+          </View>
+
+          {/* Tab bar */}
+          <View style={styles.tabBar}>
+            {tabs.map((t) => {
+              const active = activeTab === t.key;
+              return (
+                <TouchableOpacity
+                  key={t.key}
+                  style={[styles.tab, active && styles.tabActive]}
+                  onPress={() => setActiveTab(t.key)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Templates */}
+          {activeTab === 'templates' && (
+            <View style={{ paddingTop: 4 }}>
+              <Text style={[Typography.caption, { marginBottom: 14 }]}>
+                Choose a settlement template to get started.
+              </Text>
+              {templates.map((t, i) => (
+                <TemplateCard key={t.title} item={t} index={i} />
+              ))}
+            </View>
+          )}
+
+          {/* Active list */}
+          {activeTab === 'active' && (
+            <View style={{ gap: 12 }}>
+              {activeAgreements.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="document-text-outline" size={40} color={Colors.textMuted} />
+                  <Text style={styles.emptyText}>No active agreements</Text>
+                  <Text style={styles.emptyHint}>Create one from the Templates tab.</Text>
+                </View>
+              ) : (
+                activeAgreements.map((a, i) => (
+                  <SwipeableRow
+                    key={a.id}
+                    rowKey={a.id}
+                    openRowKey={openRowKey}
+                    setOpenRowKey={setOpenRowKey}
+                    actionLabel="Archive"
+                    actionIcon="archive-outline"
+                    actionColor="#374151"
+                    onAction={() => Alert.alert('Archive', 'Archive agreement?', [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Archive', style: 'destructive', onPress: () => {} },
+                    ])}
+                  >
+                    <AgreementCard
+                      agreement={a}
+                      index={i}
+                      onDetails={() => nav.push('AgreementDetail', { agreementId: a.id })}
+                    />
+                  </SwipeableRow>
+                ))
+              )}
+            </View>
+          )}
+
+          {/* History list */}
+          {activeTab === 'history' && (
+            <View style={{ gap: 12 }}>
+              {historyAgreements.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="time-outline" size={40} color={Colors.textMuted} />
+                  <Text style={styles.emptyText}>No history yet</Text>
+                  <Text style={styles.emptyHint}>Completed and refunded agreements appear here.</Text>
+                </View>
+              ) : (
+                historyAgreements.map((a, i) => (
+                  <AgreementCard
+                    key={a.id}
+                    agreement={a}
+                    index={i}
+                    isHistory
+                    onDetails={() => nav.push('AgreementDetail', { agreementId: a.id })}
+                  />
+                ))
+              )}
+            </View>
+          )}
+        </ScrollView>
+      </Animated.View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
+  root: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 20, paddingBottom: 90 },
   header: { marginBottom: 20 },
 
   tabBar: {
     flexDirection: 'row',
     backgroundColor: Colors.card,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.borderSubtle,
     marginBottom: 20,
     padding: 4,
   },
   tab: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: 10,
     alignItems: 'center',
   },
-  tabActive: { backgroundColor: Colors.primary },
-  tabLabel: { fontSize: 13, fontFamily: Fonts.medium, color: Colors.textSecondary },
-  tabLabelActive: { color: Colors.textPrimary, fontFamily: Fonts.semibold },
-
-  emptyState: { paddingVertical: 40, alignItems: 'center' },
-
-  // Agreement card
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  typeBadge: {
+  tabActive: {
     backgroundColor: Colors.primary + '22',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
     borderWidth: 1,
     borderColor: Colors.primary,
   },
-  typeBadgeText: { color: Colors.primary, fontSize: 11, fontFamily: Fonts.semibold },
-  statusBadge: {
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderWidth: 1,
-  },
-  statusBadgeText: { fontSize: 11, fontFamily: Fonts.semibold },
-  amount: {
-    color: Colors.textPrimary,
-    fontSize: 22,
-    fontFamily: Fonts.bold,
-    marginBottom: 4,
-  },
-  counterparty: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    fontFamily: 'monospace',
-    marginBottom: 4,
-  },
+  tabLabel:       { fontSize: 13, fontFamily: Fonts.medium, color: Colors.textSecondary },
+  tabLabelActive: { color: Colors.primary, fontFamily: Fonts.semiBold },
 
-  progressStepsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  progressStepItem: { alignItems: 'center', flex: 1 },
-  progressDot: { width: 8, height: 8, borderRadius: 4, marginBottom: 4 },
-  progressLabel: { fontSize: 10, color: Colors.textSecondary, fontFamily: Fonts.regular },
-  progressTrack: {
-    height: 3,
-    backgroundColor: Colors.border,
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  progressBar: { height: 3, borderRadius: 2, backgroundColor: Colors.primary },
-
-  actionRow: { flexDirection: 'row', gap: 8 },
-  actionBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  actionBtnText: { fontSize: 12, fontFamily: Fonts.semibold },
-
-  // Template cards
-  templateRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  templateIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: Colors.primary + '1A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  templateTitle: { fontSize: 15, fontFamily: Fonts.semibold, color: Colors.textPrimary, marginBottom: 2 },
-
-  // FAB
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    borderRadius: 32,
-    overflow: 'hidden',
-    elevation: 6,
-    shadowColor: Colors.primary,
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  fabGradient: {
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fabIcon: { color: Colors.textPrimary, fontSize: 28, fontFamily: Fonts.bold, lineHeight: 32 },
+  emptyState: { paddingVertical: 40, alignItems: 'center', gap: 8 },
+  emptyText:  { fontSize: 15, fontFamily: Fonts.semiBold, color: Colors.textSecondary },
+  emptyHint:  { fontSize: 12, fontFamily: Fonts.regular, color: Colors.textMuted, textAlign: 'center' },
 });

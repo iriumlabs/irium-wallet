@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Font from 'expo-font';
+import * as SecureStore from 'expo-secure-store';
 import {
   SpaceGrotesk_400Regular,
   SpaceGrotesk_500Medium,
@@ -16,7 +17,11 @@ import { usePeers } from './src/hooks/usePeers';
 import { OnboardingNavigator } from './src/navigation/OnboardingNavigator';
 import { MainNavigator } from './src/navigation/MainNavigator';
 import { IriumSplash } from './src/screens/SplashScreen';
-import { Colors, GradientColors } from './src/components/theme';
+import { AuthLockScreen } from './src/screens/AuthLockScreen';
+import { Colors } from './src/components/theme';
+
+const AUTH_METHOD_KEY = 'irium_auth_method';
+type AuthMethod = 'none' | 'pin' | 'biometric';
 
 function WalletApp({ onLogout }: { onLogout: () => void }) {
   usePeers();
@@ -24,9 +29,11 @@ function WalletApp({ onLogout }: { onLogout: () => void }) {
 }
 
 export default function App() {
-  const [ready, setReady] = useState(false);
+  const [ready, setReady]           = useState(false);
   const [showSplash, setShowSplash] = useState(true);
-  const [hasWallet, setHasWallet] = useState(false);
+  const [hasWallet, setHasWallet]   = useState(false);
+  const [authMethod, setAuthMethod] = useState<AuthMethod>('none');
+  const [unlocked, setUnlocked]     = useState(false);
 
   const { loadFromStorage } = useWalletStore();
   const { loadSyncedHeight } = useNodeStore();
@@ -34,7 +41,6 @@ export default function App() {
 
   useEffect(() => {
     async function init() {
-      // Load fonts — never block startup if fonts fail
       try {
         await Font.loadAsync({
           SpaceGrotesk_400Regular,
@@ -44,7 +50,6 @@ export default function App() {
         });
       } catch (_) {}
 
-      // Load persisted state — all have try/catch internally
       await Promise.all([
         loadFromStorage(),
         loadSyncedHeight(),
@@ -53,17 +58,24 @@ export default function App() {
 
       const seed = useWalletStore.getState().seedHex;
       setHasWallet(!!seed);
+
+      // Read auth method if a wallet exists
+      if (seed) {
+        try {
+          const m = await SecureStore.getItemAsync(AUTH_METHOD_KEY);
+          if (m === 'pin' || m === 'biometric') setAuthMethod(m);
+        } catch {}
+      }
+
       setReady(true);
     }
     init();
   }, []);
 
-  // Show black screen while loading (native splash covers this briefly)
   if (!ready) {
     return <View style={styles.root} />;
   }
 
-  // Show animated JS splash once data is loaded
   if (showSplash) {
     return (
       <View style={styles.root}>
@@ -72,13 +84,33 @@ export default function App() {
     );
   }
 
+  // Auth lock — returning user with a wallet AND a lock method set
+  if (hasWallet && authMethod !== 'none' && !unlocked) {
+    return (
+      <SafeAreaProvider>
+        <AuthLockScreen method={authMethod} onUnlock={() => setUnlocked(true)} />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <NavigationContainer>
         {hasWallet ? (
-          <WalletApp onLogout={() => setHasWallet(false)} />
+          <WalletApp onLogout={() => { setHasWallet(false); setUnlocked(false); setAuthMethod('none'); }} />
         ) : (
-          <OnboardingNavigator onComplete={() => setHasWallet(true)} />
+          <OnboardingNavigator
+            onComplete={async () => {
+              // Re-read auth method (it may have been set during onboarding)
+              try {
+                const m = await SecureStore.getItemAsync(AUTH_METHOD_KEY);
+                setAuthMethod((m === 'pin' || m === 'biometric') ? m : 'none');
+              } catch {}
+              // Mark unlocked so we go straight to MainTabs without re-prompting
+              setUnlocked(true);
+              setHasWallet(true);
+            }}
+          />
         )}
       </NavigationContainer>
     </SafeAreaProvider>
