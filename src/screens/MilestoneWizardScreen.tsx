@@ -1,3 +1,20 @@
+// TODO: This wizard is still UI-only. The canonical milestone_settlement
+// AgreementTemplateType in src/settlement.rs requires a structurally
+// different agreement body — milestones: [{milestone_id, title, amount,
+// recipient_address, refund_address, secret_hash_hex, timeout_height}] —
+// where each milestone is its own HTLC leg with an independently generated
+// SHA256 preimage. Wiring this requires:
+//   1. Extending src/bridge/http.ts buildAgreementBody to accept a multi-leg
+//      milestones array and produce the canonical milestone_settlement shape
+//   2. Generating N preimages here (one per milestone) and persisting each
+//      keyed by `${agreementHash}:${milestoneId}` in SecureStore
+//   3. Updating SavedAgreement in src/store/settlement.ts to carry per-leg
+//      funding_txids and per-leg release/refund status
+//   4. AgreementDetailScreen needs per-milestone Fund / Release / Refund
+//      controls (the wizard's current single-secret model assumes one HTLC)
+// The single-secret OTC / Freelance / Deposit wizards work end-to-end with
+// bridge.fundAgreement / buildAgreementRelease / buildAgreementRefund as of
+// this commit; milestone is the next round of work.
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
@@ -40,7 +57,6 @@ export function MilestoneWizardScreen() {
   const [milestones, setMilestones] = useState<Milestone[]>([
     { name: '', amount: '', deadline: '' },
   ]);
-  const agreementId = 'm'.repeat(64);
 
   function goBack() {
     if (step > 1) setStep((step - 1) as Step);
@@ -213,30 +229,30 @@ export function MilestoneWizardScreen() {
               </Card>
             ))}
 
-            <GradientButton label="Create Agreement →" onPress={() => setStep(4)} />
+            <GradientButton
+              label="Create Agreement →"
+              onPress={() => {
+                Alert.alert(
+                  'Not yet implemented',
+                  'The milestone settlement template requires per-leg HTLCs (each milestone needs its own secret hash, funding tx, and release/refund flow). The mobile wallet does not support this template yet. Use OTC, Freelance, or Deposit instead.',
+                );
+              }}
+            />
             <TouchableOpacity style={styles.editBtn} onPress={() => setStep(2)}>
               <Text style={{ color: Colors.textSecondary }}>← Edit</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Step 4: Success */}
+        {/* Step 4 (formerly success) is unreachable — the milestone template
+            is not implemented and the Step 3 button shows a clear error
+            instead of advancing. Left in place so the StepDots progress bar
+            keeps showing "Step 3 of 4" without a UI redesign. */}
         {step === 4 && (
           <View style={{ alignItems: 'center', gap: 20, paddingTop: 20 }}>
-            <View style={styles.successIcon}>
-              <Ionicons name="checkmark" size={40} color={Colors.success} />
-            </View>
-            <Text style={[Typography.h2, { color: Colors.success }]}>Agreement Created!</Text>
-            <Card style={{ width: '100%', gap: 10 }}>
-              <Text style={Typography.caption}>Agreement Hash</Text>
-              <Text style={[Typography.mono, { fontSize: 11, lineHeight: 16 }]} selectable>
-                {agreementId}
-              </Text>
-            </Card>
+            <Text style={[Typography.h2, { color: Colors.textSecondary }]}>Not implemented</Text>
             <Text style={[Typography.caption, { textAlign: 'center' }]}>
-              {role === 'client'
-                ? 'Share this agreement hash with your contractor to begin the project.'
-                : 'The client will fund each milestone as you complete the work.'}
+              Use a different template from the Hub.
             </Text>
             <GradientButton
               label="Back to Hub"

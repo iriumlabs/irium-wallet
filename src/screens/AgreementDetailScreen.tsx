@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   StatusBar, Alert, TouchableOpacity, Animated,
+  Modal, TextInput, Pressable,
 } from 'react-native';
 import { useScreenEnter } from '../hooks/useScreenEnter';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSettlementStore } from '../store/settlement';
 import { bridge } from '../bridge';
+import { loadPreimage } from '../bridge/secret';
 import { GradientButton } from '../components/GradientButton';
 import { Card } from '../components/Card';
 import { Colors, Typography, Fonts } from '../components/theme';
@@ -45,7 +47,11 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
   const { agreementId } = route.params;
   const enterStyle = useScreenEnter();
   const agreements = useSettlementStore((s) => s.agreements);
+  const updateAgreementStatus = useSettlementStore((s) => s.updateAgreementStatus);
   const agreement = agreements.find((a) => a.id === agreementId);
+  const [secretModalOpen, setSecretModalOpen] = useState(false);
+  const [secretInput, setSecretInput] = useState('');
+  const [actionPending, setActionPending] = useState<'release' | 'refund' | null>(null);
 
   if (!agreement) {
     return (
@@ -111,6 +117,86 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
       Alert.alert(headline, body);
     } catch (e: any) {
       Alert.alert(`${branch} check failed`, e?.message ?? 'Unknown error');
+    }
+  }
+
+  async function openReleaseModal(agreement: typeof ag) {
+    if (!agreement.agreementJson || !agreement.fundingTxid) {
+      Alert.alert(
+        'Cannot release',
+        !agreement.agreementJson
+          ? 'No canonical agreement body stored — this agreement predates the JSON-saving update.'
+          : 'Agreement has no funding txid. Fund the agreement first from the wizard or AgreementDetail screen.',
+      );
+      return;
+    }
+    // Pre-fill the secret if we created the agreement and saved the preimage to SecureStore.
+    const stored = await loadPreimage(agreement.id);
+    setSecretInput(stored ?? '');
+    setSecretModalOpen(true);
+  }
+
+  async function executeRelease(agreement: typeof ag, secretHex: string) {
+    if (!agreement.agreementJson || !agreement.fundingTxid) return;
+    if (!/^[0-9a-fA-F]{64}$/.test(secretHex.trim())) {
+      Alert.alert('Invalid secret', 'Secret preimage must be exactly 64 hex characters.');
+      return;
+    }
+    setActionPending('release');
+    try {
+      const r = await bridge.buildAgreementRelease(
+        agreement.agreementJson,
+        agreement.fundingTxid,
+        secretHex.trim(),
+        true,
+      );
+      if (!r.accepted) {
+        Alert.alert(
+          'Release not accepted',
+          `iriumd built the release tx but did not accept it.\ntxid: ${r.txid || '<empty>'}`,
+        );
+      } else {
+        updateAgreementStatus(agreement.id, 'complete');
+        Alert.alert('Released', `Release tx accepted by iriumd.\ntxid: ${r.txid}`);
+        setSecretModalOpen(false);
+      }
+    } catch (e: any) {
+      Alert.alert('Release failed', e?.message ?? 'Unknown error');
+    } finally {
+      setActionPending(null);
+    }
+  }
+
+  async function executeRefund(agreement: typeof ag) {
+    if (!agreement.agreementJson || !agreement.fundingTxid) {
+      Alert.alert(
+        'Cannot refund',
+        !agreement.agreementJson
+          ? 'No canonical agreement body stored — this agreement predates the JSON-saving update.'
+          : 'Agreement has no funding txid. Refund requires a funded HTLC to spend.',
+      );
+      return;
+    }
+    setActionPending('refund');
+    try {
+      const r = await bridge.buildAgreementRefund(
+        agreement.agreementJson,
+        agreement.fundingTxid,
+        true,
+      );
+      if (!r.accepted) {
+        Alert.alert(
+          'Refund not accepted',
+          `iriumd built the refund tx but did not accept it (likely refund timeout not yet reached).\ntxid: ${r.txid || '<empty>'}`,
+        );
+      } else {
+        updateAgreementStatus(agreement.id, 'expired');
+        Alert.alert('Refunded', `Refund tx accepted by iriumd.\ntxid: ${r.txid}`);
+      }
+    } catch (e: any) {
+      Alert.alert('Refund failed', e?.message ?? 'Unknown error');
+    } finally {
+      setActionPending(null);
     }
   }
 
@@ -227,23 +313,121 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
         {ag.status === 'funded' && (
           <View style={{ gap: 10 }}>
             <GradientButton
-              label="Check Release Eligibility"
-              onPress={() => checkEligibility(ag, 'release')}
+              label={actionPending === 'release' ? 'Releasing…' : 'Release Funds'}
+              onPress={() => openReleaseModal(ag)}
+              loading={actionPending === 'release'}
             />
             <TouchableOpacity
               style={styles.dangerBtn}
-              onPress={() => checkEligibility(ag, 'refund')}
+              onPress={() => executeRefund(ag)}
               activeOpacity={0.8}
+              disabled={actionPending !== null}
             >
-              <Text style={styles.dangerBtnText}>Check Refund Eligibility</Text>
+              <Text style={styles.dangerBtnText}>
+                {actionPending === 'refund' ? 'Refunding…' : 'Request Refund'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => checkEligibility(ag, 'release')}
+              activeOpacity={0.8}
+              style={{ alignItems: 'center', paddingVertical: 8 }}
+            >
+              <Text style={{ color: Colors.textSecondary, fontSize: 12 }}>
+                (preview: check release eligibility without spending)
+              </Text>
             </TouchableOpacity>
           </View>
         )}
       </ScrollView>
       </Animated.View>
+
+      {/* Release-secret modal */}
+      <Modal
+        visible={secretModalOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSecretModalOpen(false)}
+      >
+        <Pressable
+          style={modalStyles.backdrop}
+          onPress={() => actionPending === null && setSecretModalOpen(false)}
+        >
+          <Pressable style={modalStyles.card} onPress={(e) => e.stopPropagation()}>
+            <Text style={[Typography.h3, { marginBottom: 8 }]}>Release Funds</Text>
+            <Text style={[Typography.caption, { marginBottom: 16 }]}>
+              Enter the 64-character hex preimage that matches the agreement&apos;s
+              <Text style={{ fontFamily: 'monospace' }}> secret_hash_hex</Text>.
+              {agreement?.agreementJson ? ' Prefilled from local SecureStore if available.' : ''}
+            </Text>
+            <TextInput
+              value={secretInput}
+              onChangeText={setSecretInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              multiline
+              numberOfLines={3}
+              placeholder="64-char hex"
+              placeholderTextColor={Colors.textSecondary}
+              style={modalStyles.input}
+            />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <TouchableOpacity
+                style={modalStyles.cancelBtn}
+                onPress={() => setSecretModalOpen(false)}
+                disabled={actionPending !== null}
+              >
+                <Text style={{ color: Colors.textSecondary }}>Cancel</Text>
+              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <GradientButton
+                  label={actionPending === 'release' ? 'Releasing…' : 'Broadcast Release'}
+                  onPress={() => agreement && executeRelease(agreement, secretInput)}
+                  loading={actionPending === 'release'}
+                />
+              </View>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+const modalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  card: {
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  input: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    color: Colors.textPrimary,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  cancelBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    justifyContent: 'center',
+  },
+});
 
 function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (

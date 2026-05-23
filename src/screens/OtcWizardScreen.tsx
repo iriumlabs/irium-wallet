@@ -33,12 +33,15 @@ export function OtcWizardScreen() {
   const enterStyle = useScreenEnter();
   const { seedHex, address } = useWalletStore();
   const { nodeStatus } = useNodeStore();
-  const { addAgreement } = useSettlementStore();
+  const { addAgreement, updateAgreementStatus } = useSettlementStore();
 
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
   const [generatingHash, setGeneratingHash] = useState(false);
   const [role, setRole] = useState<Role>('buyer');
+  const [funding, setFunding] = useState(false);
+  const [fundingTxid, setFundingTxid] = useState<string | null>(null);
+  const [fundingError, setFundingError] = useState<string | null>(null);
 
   // Form fields
   const [counterpartyAddr, setCounterpartyAddr] = useState('');
@@ -327,15 +330,51 @@ export function OtcWizardScreen() {
                 {agreementId}
               </Text>
             </Card>
+            {fundingTxid ? (
+              <Card style={{ width: '100%', gap: 10 }}>
+                <Text style={[Typography.caption, { color: Colors.success }]}>Funded</Text>
+                <Text style={[Typography.mono, { fontSize: 11, lineHeight: 16 }]} selectable>
+                  txid: {fundingTxid}
+                </Text>
+              </Card>
+            ) : null}
+            {fundingError ? (
+              <Card style={{ width: '100%', gap: 6 }}>
+                <Text style={[Typography.caption, { color: Colors.danger }]}>Funding failed</Text>
+                <Text style={[Typography.caption]} selectable>{fundingError}</Text>
+              </Card>
+            ) : null}
             <Text style={[Typography.caption, { textAlign: 'center' }]}>
               Share the HTLC script and your address with your counterparty.
               Fund the HTLC to activate the trade.
             </Text>
-            <GradientButton
-              label="Share Package"
-              onPress={() => Alert.alert('Share', 'Share package functionality coming soon')}
-              style={{ width: '100%' }}
-            />
+            {!fundingTxid ? (
+              <GradientButton
+                label={funding ? 'Funding…' : 'Fund Agreement (via iriumd)'}
+                onPress={async () => {
+                  if (!agreementJson || !agreementId) return;
+                  setFunding(true);
+                  setFundingError(null);
+                  try {
+                    const r = await bridge.fundAgreement(agreementJson, true);
+                    if (!r.accepted) {
+                      setFundingError(
+                        `iriumd did not accept the funding tx. txid: ${r.txid || '<empty>'}`,
+                      );
+                    } else {
+                      setFundingTxid(r.txid);
+                      updateAgreementStatus(agreementId, 'funded', r.txid);
+                    }
+                  } catch (e: any) {
+                    setFundingError(e?.message ?? 'Unknown error');
+                  } finally {
+                    setFunding(false);
+                  }
+                }}
+                loading={funding}
+                style={{ width: '100%' }}
+              />
+            ) : null}
             <GradientButton
               label="Back to Hub"
               onPress={() => nav.navigate('Hub')}
