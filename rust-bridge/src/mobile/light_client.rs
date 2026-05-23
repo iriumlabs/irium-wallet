@@ -326,6 +326,7 @@ async fn peer_session(
         tip_hash: Some(our_tip_hex),
         capabilities: None,
         marketplace_feed: None,
+        external_endpoint: None,
     };
     send_msg(stream, &hs.to_message()?).await?;
 
