@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { bridge } from '../bridge';
+import { generateSecretAndHash, savePreimage } from '../bridge/secret';
 import { useWalletStore } from '../store/wallet';
 import { useNodeStore } from '../store/node';
 import { useSettlementStore, SavedAgreement } from '../store/settlement';
@@ -50,6 +51,8 @@ export function OtcWizardScreen() {
   const [secretHashHex, setSecretHashHex] = useState('');
   const [htlcScriptHex, setHtlcScriptHex] = useState('');
   const [agreementId, setAgreementId] = useState('');
+  const [preimageHex, setPreimageHex] = useState('');
+  const [agreementJson, setAgreementJson] = useState('');
 
   // Prefill from marketplace offer
   useEffect(() => {
@@ -86,12 +89,12 @@ export function OtcWizardScreen() {
     setStep(3);
     setGeneratingHash(true);
     try {
-      const idx = Math.floor(Date.now() / 1000) % 9000 + 1000;
-      const secret = await bridge.derivePrivkeyHex(seedHex, idx);
-      setSecretHashHex(secret.slice(0, 64));
+      const { preimageHex: pre, secretHashHex: hash } = await generateSecretAndHash();
+      setPreimageHex(pre);
+      setSecretHashHex(hash);
 
       const script = await bridge.encodeHtlcv1(
-        secret.slice(0, 64),
+        hash,
         payeeAddress.trim(),
         payerAddress.trim(),
         timeoutHeight,
@@ -118,8 +121,13 @@ export function OtcWizardScreen() {
         secret_hash_hex: secretHashHex,
         payment_reference: paymentMethod || undefined,
       });
+      setAgreementJson(json);
       const id = await bridge.computeAgreementHash(json);
       setAgreementId(id);
+
+      if (id && preimageHex) {
+        await savePreimage(id, preimageHex);
+      }
 
       const saved: SavedAgreement = {
         id,
@@ -135,6 +143,7 @@ export function OtcWizardScreen() {
         status: 'draft',
         paymentReference: paymentMethod,
         createdAt: Date.now(),
+        agreementJson: json,
       };
       addAgreement(saved);
       setStep(5);

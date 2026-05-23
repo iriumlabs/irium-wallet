@@ -38,15 +38,39 @@ export interface HtlcInfo {
 }
 
 export interface AgreementParams {
+  // 'otc' or 'simple-settlement' (wizard-side labels; the bridge translates
+  // to canonical AgreementTemplateType snake_case enum values).
   template_type: string;
   payer_address: string;
   payee_address: string;
   total_amount_sats: number; // u64
-  timeout_height: number;    // u64
-  secret_hash_hex: string;
+  timeout_height: number;    // u64 — used for deadlines.refund_deadline and refund_conditions[].timeout_height
+  secret_hash_hex: string;   // 64-char hex SHA256 of preimage
   asset_reference?: string;
   payment_reference?: string;
-  document_hash?: string;
+  document_hash?: string;    // 64-char hex; bridge defaults to zeros if omitted
+  agreement_id?: string;     // bridge generates if omitted
+  creation_time?: number;    // unix seconds; bridge fills with Date.now()/1000 if omitted
+}
+
+export interface AgreementStatus {
+  agreement_hash: string;
+  state: string;             // lifecycle.state — draft|proposed|funded|partially_released|released|refunded|expired|cancelled|disputed_metadata_only
+  proof_depth: number | null;
+  proof_final: boolean;
+  release_eligible: boolean;
+}
+
+export interface SpendEligibility {
+  agreement_hash: string;
+  branch: string;            // 'release' | 'refund'
+  eligible: boolean;
+  reasons: string[];         // plural — machine-readable codes from iriumd
+  funded: boolean;
+  unspent: boolean;
+  timeout_height?: number;
+  timeout_reached: boolean;
+  expected_hash?: string;
 }
 
 export interface LightClientConfig {
@@ -131,6 +155,9 @@ export interface SpvBridge {
   // Agreement
   computeAgreementHash(agreementJson: string): Promise<string>;
   createAgreement(params: AgreementParams): Promise<string>;
+  getAgreementStatus(agreementJson: string): Promise<AgreementStatus>;
+  getReleaseEligibility(agreementJson: string, fundingTxid: string): Promise<SpendEligibility>;
+  getRefundEligibility(agreementJson: string, fundingTxid: string): Promise<SpendEligibility>;
 
   // SPV
   verifyMerkleProof(

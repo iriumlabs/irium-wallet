@@ -1,4 +1,4 @@
-import type { SpvBridge, Utxo, BalanceInfo, NodeStatus, TxRecord, HtlcInfo, AgreementParams, LightClientConfig, WifKey } from './types';
+import type { SpvBridge, Utxo, BalanceInfo, NodeStatus, TxRecord, HtlcInfo, AgreementParams, LightClientConfig, WifKey, AgreementStatus, SpendEligibility } from './types';
 
 // Deterministic mock addresses for testability
 const MOCK_ADDRESS = 'Q8XbJ3h37uUSPnXdBBG3DsXWhzRiDshaPz';
@@ -125,6 +125,43 @@ export const mockBridge: SpvBridge = {
       secret_hash_hex: params.secret_hash_hex,
       timeout_height: params.timeout_height,
     }, null, 2);
+  },
+
+  async getAgreementStatus(_agreementJson: string): Promise<AgreementStatus> {
+    await delay(150);
+    return {
+      agreement_hash: 'ee'.repeat(32),
+      state: 'draft',
+      proof_depth: null,
+      proof_final: false,
+      release_eligible: false,
+    };
+  },
+
+  async getReleaseEligibility(_agreementJson: string, _fundingTxid: string): Promise<SpendEligibility> {
+    await delay(150);
+    return {
+      agreement_hash: 'ee'.repeat(32),
+      branch: 'release',
+      eligible: false,
+      reasons: ['mock_bridge_not_connected'],
+      funded: false,
+      unspent: false,
+      timeout_reached: false,
+    };
+  },
+
+  async getRefundEligibility(_agreementJson: string, _fundingTxid: string): Promise<SpendEligibility> {
+    await delay(150);
+    return {
+      agreement_hash: 'ee'.repeat(32),
+      branch: 'refund',
+      eligible: false,
+      reasons: ['mock_bridge_not_connected'],
+      funded: false,
+      unspent: false,
+      timeout_reached: false,
+    };
   },
 
   async verifyMerkleProof(_txid, _root, _proof, _index) {

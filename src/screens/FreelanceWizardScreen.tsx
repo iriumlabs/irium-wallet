@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { bridge } from '../bridge';
+import { generateSecretAndHash, savePreimage } from '../bridge/secret';
 import { useWalletStore } from '../store/wallet';
 import { useNodeStore } from '../store/node';
 import { useSettlementStore, SavedAgreement } from '../store/settlement';
@@ -43,6 +44,8 @@ export function FreelanceWizardScreen() {
   const [secretHashHex, setSecretHashHex] = useState('');
   const [htlcScriptHex, setHtlcScriptHex] = useState('');
   const [agreementId, setAgreementId] = useState('');
+  const [preimageHex, setPreimageHex] = useState('');
+  const [agreementJson, setAgreementJson] = useState('');
 
   const amountSats = Math.floor(parseFloat(amountIrm || '0') * 1e8);
   const timeoutHeight = (nodeStatus?.height ?? 45000) + parseInt(deadlineBlocks || '2016', 10);
@@ -64,12 +67,12 @@ export function FreelanceWizardScreen() {
 
     setLoading(true);
     try {
-      const idx = Math.floor(Date.now() / 1000) % 9000 + 1000;
-      const secret = await bridge.derivePrivkeyHex(seedHex, idx);
-      setSecretHashHex(secret.slice(0, 64));
+      const { preimageHex: pre, secretHashHex: hash } = await generateSecretAndHash();
+      setPreimageHex(pre);
+      setSecretHashHex(hash);
 
       const script = await bridge.encodeHtlcv1(
-        secret.slice(0, 64),
+        hash,
         freelancerAddress.trim(),
         clientAddress.trim(),
         timeoutHeight,
@@ -97,8 +100,13 @@ export function FreelanceWizardScreen() {
         secret_hash_hex: secretHashHex,
         payment_reference: ref,
       });
+      setAgreementJson(json);
       const id = await bridge.computeAgreementHash(json);
       setAgreementId(id);
+
+      if (id && preimageHex) {
+        await savePreimage(id, preimageHex);
+      }
 
       const saved: SavedAgreement = {
         id,
@@ -114,6 +122,7 @@ export function FreelanceWizardScreen() {
         status: 'draft',
         paymentReference: ref,
         createdAt: Date.now(),
+        agreementJson: json,
       };
       addAgreement(saved);
       setStep(4);

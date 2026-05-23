@@ -1,11 +1,11 @@
 import type { SpvBridge } from './types';
 import { mockBridge } from './mock';
+import { httpBridge } from './http';
 
-// Expo Go / CI mode — mock bridge only, no native module bundled.
-// To switch to the real native .so for production:
-//   1. Set USE_MOCK = false
-//   2. Replace this file's export with: require('spv-mobile')
-//   3. Build a custom dev client (NOT Expo Go)
-export const bridge: SpvBridge = mockBridge;
+// Hybrid: real HTTP calls to iriumd for RPC reads + broadcastTx, mock for the
+// crypto/HTLC/signing methods until the native spv-mobile module is plumbed.
+// To swap the mock half for the native module:
+//   export const bridge: SpvBridge = { ...require('spv-mobile'), ...httpBridge };
+export const bridge: SpvBridge = { ...mockBridge, ...httpBridge };
 
 export * from './types';

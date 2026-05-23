@@ -20,6 +20,10 @@ export interface SavedAgreement {
   status: AgreementStatus;
   paymentReference: string;
   createdAt: number;
+  // Canonical AgreementObject JSON as accepted by iriumd; used to re-POST
+  // to status/eligibility endpoints. Null on agreements created before this
+  // field was added.
+  agreementJson?: string | null;
 }
 
 interface SettlementState {

@@ -9,6 +9,7 @@ import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSettlementStore } from '../store/settlement';
+import { bridge } from '../bridge';
 import { GradientButton } from '../components/GradientButton';
 import { Card } from '../components/Card';
 import { Colors, Typography, Fonts } from '../components/theme';
@@ -88,6 +89,29 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
   async function copyHash() {
     await Clipboard.setStringAsync(ag.id);
     Alert.alert('Copied', 'Agreement hash copied to clipboard');
+  }
+
+  async function checkEligibility(agreement: typeof ag, branch: 'release' | 'refund') {
+    if (!agreement.agreementJson) {
+      Alert.alert(
+        'Cannot check',
+        'This agreement was created before the JSON-saving update; no canonical agreement body to query.',
+      );
+      return;
+    }
+    const fundingTxid = agreement.fundingTxid ?? '';
+    try {
+      const r = branch === 'release'
+        ? await bridge.getReleaseEligibility(agreement.agreementJson, fundingTxid)
+        : await bridge.getRefundEligibility(agreement.agreementJson, fundingTxid);
+      const headline = r.eligible ? `${branch}: eligible` : `${branch}: NOT eligible`;
+      const body = r.reasons.length > 0
+        ? r.reasons.join('\n')
+        : (r.eligible ? 'No blocking conditions reported by iriumd.' : 'No reasons returned.');
+      Alert.alert(headline, body);
+    } catch (e: any) {
+      Alert.alert(`${branch} check failed`, e?.message ?? 'Unknown error');
+    }
   }
 
   function truncateAddr(addr: string) {
@@ -203,15 +227,15 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
         {ag.status === 'funded' && (
           <View style={{ gap: 10 }}>
             <GradientButton
-              label="Release Funds"
-              onPress={() => Alert.alert('Release', 'Enter secret to release funds (placeholder)')}
+              label="Check Release Eligibility"
+              onPress={() => checkEligibility(ag, 'release')}
             />
             <TouchableOpacity
               style={styles.dangerBtn}
-              onPress={() => Alert.alert('Refund', 'Refund requested (placeholder)')}
+              onPress={() => checkEligibility(ag, 'refund')}
               activeOpacity={0.8}
             >
-              <Text style={styles.dangerBtnText}>Request Refund</Text>
+              <Text style={styles.dangerBtnText}>Check Refund Eligibility</Text>
             </TouchableOpacity>
           </View>
         )}
