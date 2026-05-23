@@ -14,49 +14,6 @@ import type { MarketplaceStackParams, MarketOfferData } from '../navigation/Mark
 
 type Nav = NativeStackNavigationProp<MarketplaceStackParams, 'Feed'>;
 
-// ─── Mock fallback (used when no RPC URL configured or fetch fails) ──────────
-
-const MOCK_OFFERS: MarketOfferData[] = [
-  {
-    offer_id: 'mock-1',
-    seller_address: 'Q9KxBRfrnb6v9Vb8vuHjwkZaxj3ZRhJWpg',
-    seller_pubkey:  '03e918af472e63de044c983df9f09bae57d4c78a70998d5d5fded408672886f868',
-    amount_irm:     50_000_000_000,
-    payment_method: 'bank-transfer',
-    status:         'open',
-    timeout_height: 50000,
-    created_at:     Math.floor(Date.now() / 1000) - 120,
-    payment_instructions: 'Wire to IBAN GB12-1234-5678. Reference: offer ID.',
-  },
-  {
-    offer_id: 'mock-2',
-    seller_address: 'QwLpN5jK8tHxV2bWdN3PaXY1RmZqDnPa7b',
-    amount_irm:     120_000_000_000,
-    payment_method: 'usdt-trc20',
-    status:         'open',
-    timeout_height: 49500,
-    created_at:     Math.floor(Date.now() / 1000) - 900,
-  },
-  {
-    offer_id: 'mock-3',
-    seller_address: 'Qb9eM5xKnHwS4d3JfRbVcUaPo8nXyHpKqL',
-    amount_irm:     25_000_000_000,
-    payment_method: 'cash',
-    status:         'open',
-    timeout_height: 49800,
-    created_at:     Math.floor(Date.now() / 1000) - 3600,
-  },
-  {
-    offer_id: 'mock-4',
-    seller_address: 'QYx2mNvL7fAjZ8wCkRpSqMnTeJrUbDfV4z',
-    amount_irm:     500_000_000_000,
-    payment_method: 'btc-onchain',
-    status:         'taken',
-    timeout_height: 49000,
-    created_at:     Math.floor(Date.now() / 1000) - 7200,
-  },
-];
-
 function irmStr(sats: number) {
   if (sats >= 1e12) return (sats / 1e12).toFixed(1) + 'T';
   if (sats >= 1e9)  return (sats / 1e9).toFixed(1) + 'B';
@@ -177,14 +134,13 @@ export function MarketplaceScreen() {
   const [error, setError]         = useState<string | null>(null);
   const [filter, setFilter]       = useState<StatusFilter>('all');
   const [openRowKey, setOpenRowKey] = useState<string | null>(null);
-  const [usingMockData, setUsingMockData] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchOffers = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      if (!rpcUrl) throw new Error('No RPC URL configured');
+      if (!rpcUrl) throw new Error('No RPC URL configured — set one in Settings');
       const resp = await fetch(`${rpcUrl.replace(/\/$/, '')}/offers/feed`, {
         method: 'GET',
         headers: { Accept: 'application/json' },
@@ -193,11 +149,10 @@ export function MarketplaceScreen() {
       const json = await resp.json();
       const list: MarketOfferData[] = Array.isArray(json?.offers) ? json.offers : [];
       setOffers(list);
-      setUsingMockData(false);
     } catch (e: any) {
-      // Fallback to mock data when not configured / unreachable
-      setOffers(MOCK_OFFERS);
-      setUsingMockData(true);
+      // Real failure — surface it. No fake fallback data, otherwise users
+      // would see synthetic offers and think the marketplace is working.
+      setOffers([]);
       setError(e?.message ?? 'Could not reach node');
     } finally {
       setLoading(false);
@@ -220,8 +175,8 @@ export function MarketplaceScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Marketplace</Text>
         <Text style={styles.headerSub}>
-          {usingMockData
-            ? `Demo offers · configure RPC in Settings`
+          {error
+            ? `Could not reach node — check Settings > RPC URL`
             : `${offers.length} offer${offers.length === 1 ? '' : 's'} from your node`}
         </Text>
       </View>
@@ -237,7 +192,7 @@ export function MarketplaceScreen() {
         <View style={styles.errorBanner}>
           <Ionicons name="information-circle-outline" size={14} color={Colors.warning} />
           <Text style={styles.errorText} numberOfLines={1}>
-            {error} — showing demo offers
+            {error}
           </Text>
         </View>
       )}

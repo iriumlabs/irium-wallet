@@ -69,29 +69,17 @@ export function ImportWalletScreen({ navigation }: Props) {
   }
 
   async function importWifKey() {
-    const trimmed = wifInput.trim();
-    if (trimmed.length < 40) {
-      Alert.alert('Invalid WIF', 'WIF keys are at least 40 characters');
-      return;
-    }
-    setLoading(true);
-    try {
-      const result = await bridge.importWif(trimmed);
-      // WIF import gives us an address + pubkey but no seed — we still need a seed
-      // for the wallet store's deterministic derivation. Use a marker seed derived
-      // from the WIF so the bridge can re-derive the same key at index 0.
-      await setWif(trimmed);
-      setAddress(result.address);
-      // Use the WIF hex bytes (after the version byte) as the seed material.
-      // Mock bridge ignores this; real bridge will hash it consistently.
-      const fakeSeed = trimmed.padEnd(64, '0').slice(0, 64);
-      await setSeedHex(fakeSeed);
-      navigation.push('Connecting', { mode: 'import' });
-    } catch (e: any) {
-      Alert.alert('Import failed', e.message ?? 'Invalid WIF key');
-    } finally {
-      setLoading(false);
-    }
+    // WIF encodes a single private key. The mobile wallet's store and
+    // BIP32 derivation pipeline assume a seed exists (so further addresses
+    // at index 1, 2, ... can be derived). Faking a seed from WIF bytes
+    // would silently put the user at a different address than the one
+    // they expect — which is exactly the kind of mock-data trap we are
+    // removing in this cleanup. Block the path with a clear message
+    // pointing at the supported flows.
+    Alert.alert(
+      'WIF import not supported',
+      'Single-key (WIF) imports are not yet supported on mobile. Use a 12 or 24-word mnemonic phrase, or restore from a JSON backup file that contains seed_hex.',
+    );
   }
 
   async function pickBackupFile() {

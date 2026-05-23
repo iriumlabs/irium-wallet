@@ -7,6 +7,11 @@ import type {
   AgreementParams,
   AgreementStatus,
   SpendEligibility,
+  FundingResult,
+  FundingOutput,
+  SpendBuildResult,
+  ProofSubmitResult,
+  AgreementInspectResult,
 } from './types';
 import { SpvError } from './types';
 import { useWalletStore } from '../store/wallet';
@@ -178,8 +183,17 @@ interface RawSpendEligibilityResponse {
 // The wizard's `payer_address` / `payee_address` carry the wizard's intent;
 // we map them to canonical roles per template below.
 function buildAgreementBody(params: AgreementParams): Record<string, unknown> {
+  // Wizard label -> canonical AgreementTemplateType (snake_case).
+  //   'otc'              -> otc_settlement
+  //   'deposit'          -> refundable_deposit
+  //   anything else      -> simple_release_refund (the Freelance wizard's value)
   const isOtc = params.template_type === 'otc';
-  const templateType = isOtc ? 'otc_settlement' : 'simple_release_refund';
+  const isDeposit = params.template_type === 'deposit';
+  const templateType = isOtc
+    ? 'otc_settlement'
+    : isDeposit
+      ? 'refundable_deposit'
+      : 'simple_release_refund';
 
   // For OTC, the wizard's payer_address is the buyer (fiat payer / IRM receiver)
   // and payee_address is the seller (IRM locker). The canonical OTC agreement
@@ -187,6 +201,10 @@ function buildAgreementBody(params: AgreementParams): Record<string, unknown> {
   // IRM after delivering off-chain payment). See build_otc_agreement in
   // src/settlement.rs:1478. We keep the wizard's addresses but swap the
   // party_id refs to match the canonical OTC schema.
+  //
+  // For deposit and simple_release_refund, payer/payee semantics already
+  // align with the wizard's inputs (payer = locker = depositor or hiring
+  // party; payee = release destination = recipient or contractor).
   const parties = isOtc
     ? [
         { party_id: 'buyer',  display_name: 'Buyer',  address: params.payer_address, role: 'buyer' },
@@ -405,7 +423,182 @@ export const httpBridge: Partial<SpvBridge> = {
   async getRefundEligibility(agreementJson, fundingTxid) {
     return spendEligibility(agreementJson, fundingTxid, 'refund');
   },
+
+  // POST /rpc/fundagreement — iriumd's wallet signs and (optionally) broadcasts
+  // the funding tx that locks IRM into the HTLC. The mobile wallet does not
+  // sign; the on-chain funder is whoever iriumd's wallet identifies as. Per
+  // canonical OTC, the agreement's `payer` party_id (= seller) is expected to
+  // be the funder semantically — but iriumd will sign from whichever address
+  // in its wallet has spendable UTXOs.
+  async fundAgreement(agreementJson, broadcast, milestoneId) {
+    let agreement: unknown;
+    try {
+      agreement = JSON.parse(agreementJson);
+    } catch (e: any) {
+      throw new SpvError('Parse', `bad agreement JSON: ${e?.message ?? String(e)}`);
+    }
+    const { rpcUrl, authToken } = useWalletStore.getState();
+    const body: Record<string, unknown> = { agreement, broadcast };
+    if (milestoneId) body.milestone_id = milestoneId;
+    const r = await rpcPost<RawFundAgreementResponse>(rpcUrl, authToken, '/rpc/fundagreement', body);
+    const outputs: FundingOutput[] = Array.isArray(r.outputs)
+      ? r.outputs.map((o) => ({
+          vout: Number(o.vout ?? 0),
+          role: String(o.role ?? ''),
+          milestone_id: o.milestone_id ?? null,
+          amount: Number(o.amount ?? 0),
+        }))
+      : [];
+    const result: FundingResult = {
+      agreement_hash: String(r.agreement_hash ?? ''),
+      txid: String(r.txid ?? ''),
+      accepted: !!r.accepted,
+      raw_tx_hex: String(r.raw_tx_hex ?? ''),
+      outputs,
+      fee: Number(r.fee ?? 0),
+    };
+    return result;
+  },
+
+  async buildAgreementRelease(agreementJson, fundingTxid, secretHex, broadcast) {
+    return spendBuild(agreementJson, fundingTxid, 'release', broadcast, secretHex);
+  },
+
+  async buildAgreementRefund(agreementJson, fundingTxid, broadcast) {
+    return spendBuild(agreementJson, fundingTxid, 'refund', broadcast);
+  },
+
+  async submitProof(proofJson) {
+    let proof: unknown;
+    try {
+      proof = JSON.parse(proofJson);
+    } catch (e: any) {
+      throw new SpvError('Parse', `bad proof JSON: ${e?.message ?? String(e)}`);
+    }
+    const { rpcUrl, authToken } = useWalletStore.getState();
+    const r = await rpcPost<RawSubmitProofResponse>(rpcUrl, authToken, '/rpc/submitproof', { proof });
+    const result: ProofSubmitResult = {
+      proof_id: String(r.proof_id ?? ''),
+      agreement_hash: String(r.agreement_hash ?? ''),
+      accepted: !!r.accepted,
+      duplicate: !!r.duplicate,
+      message: String(r.message ?? ''),
+      tip_height: Number(r.tip_height ?? 0),
+    };
+    return result;
+  },
+
+  async inspectAgreement(agreementJson) {
+    let agreement: unknown;
+    try {
+      agreement = JSON.parse(agreementJson);
+    } catch (e: any) {
+      throw new SpvError('Parse', `bad agreement JSON: ${e?.message ?? String(e)}`);
+    }
+    const { rpcUrl, authToken } = useWalletStore.getState();
+    const r = await rpcPost<RawAgreementInspectResponse2>(rpcUrl, authToken, '/rpc/inspectagreement', { agreement });
+    const s = r.summary ?? {};
+    const result: AgreementInspectResult = {
+      agreement_hash: String(r.agreement_hash ?? ''),
+      summary: {
+        agreement_hash: String(s.agreement_hash ?? r.agreement_hash ?? ''),
+        total_amount: Number(s.total_amount ?? 0),
+        template_type: String(s.template_type ?? ''),
+        milestone_count: Number(s.milestone_count ?? 0),
+        uses_htlc_timeout: !!s.uses_htlc_timeout,
+        has_deposit_rule: !!s.has_deposit_rule,
+      },
+    };
+    return result;
+  },
 };
+
+async function spendBuild(
+  agreementJson: string,
+  fundingTxid: string,
+  branch: 'release' | 'refund',
+  broadcast: boolean,
+  secretHex?: string,
+): Promise<SpendBuildResult> {
+  let agreement: unknown;
+  try {
+    agreement = JSON.parse(agreementJson);
+  } catch (e: any) {
+    throw new SpvError('Parse', `bad agreement JSON: ${e?.message ?? String(e)}`);
+  }
+  const path =
+    branch === 'release'
+      ? '/rpc/buildagreementrelease'
+      : '/rpc/buildagreementrefund';
+  const body: Record<string, unknown> = {
+    agreement,
+    funding_txid: fundingTxid,
+    broadcast,
+  };
+  if (secretHex) body.secret_hex = secretHex;
+  const { rpcUrl, authToken } = useWalletStore.getState();
+  const r = await rpcPost<RawSpendBuildResponse>(rpcUrl, authToken, path, body);
+  return {
+    agreement_hash: String(r.agreement_hash ?? ''),
+    agreement_id: String(r.agreement_id ?? ''),
+    funding_txid: String(r.funding_txid ?? fundingTxid),
+    htlc_vout: Number(r.htlc_vout ?? 0),
+    branch: String(r.branch ?? branch),
+    destination_address: String(r.destination_address ?? ''),
+    txid: String(r.txid ?? ''),
+    accepted: !!r.accepted,
+    raw_tx_hex: String(r.raw_tx_hex ?? ''),
+    fee: Number(r.fee ?? 0),
+  };
+}
+
+interface RawFundAgreementResponse {
+  agreement_hash?: string;
+  txid?: string;
+  accepted?: boolean;
+  raw_tx_hex?: string;
+  fee?: number;
+  outputs?: Array<{
+    vout?: number;
+    role?: string;
+    milestone_id?: string | null;
+    amount?: number;
+  }>;
+}
+
+interface RawSpendBuildResponse {
+  agreement_hash?: string;
+  agreement_id?: string;
+  funding_txid?: string;
+  htlc_vout?: number;
+  branch?: string;
+  destination_address?: string;
+  txid?: string;
+  accepted?: boolean;
+  raw_tx_hex?: string;
+  fee?: number;
+}
+
+interface RawSubmitProofResponse {
+  proof_id?: string;
+  agreement_hash?: string;
+  accepted?: boolean;
+  duplicate?: boolean;
+  message?: string;
+  tip_height?: number;
+}
+
+interface RawAgreementInspectResponse2 {
+  agreement_hash?: string;
+  summary?: {
+    agreement_hash?: string;
+    total_amount?: number;
+    template_type?: string;
+    milestone_count?: number;
+    uses_htlc_timeout?: boolean;
+    has_deposit_rule?: boolean;
+  };
+}
 
 async function spendEligibility(
   agreementJson: string,

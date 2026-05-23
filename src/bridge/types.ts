@@ -73,6 +73,58 @@ export interface SpendEligibility {
   expected_hash?: string;
 }
 
+export interface FundingOutput {
+  vout: number;
+  role: string;               // e.g. "Funding", "OtcSettlement"
+  milestone_id: string | null;
+  amount: number;             // u64 sats
+}
+
+export interface FundingResult {
+  agreement_hash: string;
+  txid: string;
+  accepted: boolean;          // true when broadcast=true AND iriumd's mempool accepted the tx
+  raw_tx_hex: string;
+  outputs: FundingOutput[];
+  fee: number;                // u64 sats
+}
+
+export interface SpendBuildResult {
+  agreement_hash: string;
+  agreement_id: string;
+  funding_txid: string;
+  htlc_vout: number;
+  branch: string;             // 'release' | 'refund'
+  destination_address: string;
+  txid: string;
+  accepted: boolean;          // true when broadcast=true AND mempool accepted
+  raw_tx_hex: string;         // caller can submit via rpcSubmitTx if accepted=false
+  fee: number;
+}
+
+export interface ProofSubmitResult {
+  proof_id: string;
+  agreement_hash: string;
+  accepted: boolean;
+  duplicate: boolean;
+  message: string;
+  tip_height: number;
+}
+
+export interface AgreementSummary {
+  agreement_hash: string;
+  total_amount: number;
+  template_type: string;
+  milestone_count: number;
+  uses_htlc_timeout: boolean;
+  has_deposit_rule: boolean;
+}
+
+export interface AgreementInspectResult {
+  agreement_hash: string;
+  summary: AgreementSummary;
+}
+
 export interface LightClientConfig {
   seedlist_path: string;
   extra_peer?: string;
@@ -158,6 +210,12 @@ export interface SpvBridge {
   getAgreementStatus(agreementJson: string): Promise<AgreementStatus>;
   getReleaseEligibility(agreementJson: string, fundingTxid: string): Promise<SpendEligibility>;
   getRefundEligibility(agreementJson: string, fundingTxid: string): Promise<SpendEligibility>;
+  // Settlement-flow extras (all HTTP-only; iriumd does the signing).
+  fundAgreement(agreementJson: string, broadcast: boolean, milestoneId?: string): Promise<FundingResult>;
+  buildAgreementRelease(agreementJson: string, fundingTxid: string, secretHex: string, broadcast: boolean): Promise<SpendBuildResult>;
+  buildAgreementRefund(agreementJson: string, fundingTxid: string, broadcast: boolean): Promise<SpendBuildResult>;
+  submitProof(proofJson: string): Promise<ProofSubmitResult>;
+  inspectAgreement(agreementJson: string): Promise<AgreementInspectResult>;
 
   // SPV
   verifyMerkleProof(

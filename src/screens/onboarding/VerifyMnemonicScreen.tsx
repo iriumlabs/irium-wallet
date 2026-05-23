@@ -131,12 +131,16 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
   }
 
   function verify(): boolean {
-    // In mock mode (or real mode) compare against actual words if available
+    // Strict: every answer must match the actual word at that position.
+    // If the words array is empty (mnemonic generation failed upstream),
+    // verification must REFUSE — accepting "any non-empty answer" used
+    // to happen here in the old mock-friendly path and silently let the
+    // user finish onboarding with no real backup.
+    if (words.length === 0) return false;
     return positions.every((pos, i) => {
       const expected = words[pos]?.toLowerCase() ?? '';
       const given = answers[i].toLowerCase();
-      // Accept any non-empty answer in mock mode when words array is empty
-      if (!expected) return given.length > 0;
+      if (!expected) return false;
       return given === expected;
     });
   }
@@ -200,8 +204,6 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
           const given = answers[i].toLowerCase();
           const isWrong = submitted && given !== '' && expected !== '' && given !== expected;
           const isOk = submitted && expected !== '' && given === expected;
-          // In mock mode (no words): anything non-empty is green
-          const isMockOk = submitted && expected === '' && given.length > 0;
 
           return (
             <Animated.View
@@ -209,7 +211,7 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
               style={[
                 styles.card,
                 isWrong && styles.cardError,
-                (isOk || isMockOk) && styles.cardOk,
+                isOk && styles.cardOk,
                 {
                   opacity: cardAnims[i].opacity,
                   transform: [
@@ -223,7 +225,7 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>Word #{pos + 1}</Text>
                 </View>
-                {(isOk || isMockOk) && (
+                {isOk && (
                   <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
                 )}
                 {isWrong && (
@@ -231,7 +233,7 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
                 )}
               </View>
               <TextInput
-                style={[styles.input, isWrong && styles.inputError, (isOk || isMockOk) && styles.inputOk]}
+                style={[styles.input, isWrong && styles.inputError, isOk && styles.inputOk]}
                 value={answers[i]}
                 onChangeText={(v) => {
                   setSubmitted(false);
