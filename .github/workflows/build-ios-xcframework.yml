@@ -1,0 +1,142 @@
+name: Build iOS native bridge
+
+# Builds the spv-mobile iOS XCFramework + UniFFI Swift bindings on macOS,
+# then commits the artifacts back to main so the Expo iOS build (which
+# can only run on a Mac itself) can be unblocked from any platform's
+# perspective just by triggering this workflow.
+#
+# Triggered:
+#   - manually via the Actions tab (workflow_dispatch)
+#   - on push to main when rust-bridge/ or this workflow file changes
+#
+# Output committed to the repo:
+#   - modules/spv-mobile/ios/spv_mobile.swift
+#   - modules/spv-mobile/ios/spv_mobileFFI.h
+#   - modules/spv-mobile/ios/SpvMobile.xcframework/
+#
+# The commit is unsigned because the github-actions bot has no signing
+# key configured. The GitHub UI still marks it Verified via web-flow
+# signing. If a signed-commit policy needs to apply to CI artifacts too,
+# add a GPG/SSH key to repo secrets and import it before the commit step.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'rust-bridge/**'
+      - 'modules/spv-mobile/src/**'
+      - 'modules/spv-mobile/SpvMobile.podspec'
+      - '.github/workflows/build-ios-xcframework.yml'
+
+permissions:
+  # Required for the final step's git push back to main.
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      # rust-bridge/Cargo.toml has irium-node-rs = { path = "../../irium-core/irium-source" }.
+      # The two-repo checkout below recreates that sibling layout under the runner workspace.
+
+      - name: Checkout wallet repo
+        uses: actions/checkout@v4
+        with:
+          path: irium-wallet
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout iriumlabs/irium for the irium-node-rs path dep
+        uses: actions/checkout@v4
+        with:
+          repository: iriumlabs/irium
+          path: irium-core/irium-source
+          ref: main
+
+      - name: Install Rust toolchain + iOS targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - name: Cache cargo registry, git db, and target/
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            irium-wallet/rust-bridge/target
+          key: ${{ runner.os }}-rustbridge-${{ hashFiles('irium-wallet/rust-bridge/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rustbridge-
+
+      - name: Install uniffi-bindgen (must match uniffi 0.29 runtime in rust-bridge/Cargo.toml)
+        run: |
+          if ! command -v uniffi-bindgen >/dev/null 2>&1; then
+            cargo install --locked uniffi-bindgen --version 0.29.4
+          fi
+          uniffi-bindgen --version
+
+      - name: Build rust-bridge for aarch64-apple-ios (physical device)
+        working-directory: irium-wallet/rust-bridge
+        run: cargo build --target aarch64-apple-ios --release
+
+      - name: Build rust-bridge for aarch64-apple-ios-sim (Apple Silicon simulator)
+        working-directory: irium-wallet/rust-bridge
+        run: cargo build --target aarch64-apple-ios-sim --release
+
+      - name: Generate UniFFI Swift bindings
+        working-directory: irium-wallet
+        run: |
+          mkdir -p modules/spv-mobile/ios
+          uniffi-bindgen generate rust-bridge/src/spv_mobile.udl \
+            --language swift \
+            --out-dir modules/spv-mobile/ios
+          ls -la modules/spv-mobile/ios
+
+      - name: Stage headers for XCFramework
+        working-directory: irium-wallet
+        run: |
+          rm -rf modules/spv-mobile/ios/Headers
+          mkdir -p modules/spv-mobile/ios/Headers
+          cp modules/spv-mobile/ios/spv_mobileFFI.h modules/spv-mobile/ios/Headers/
+          # xcodebuild expects the modulemap named module.modulemap inside the headers dir
+          if [ -f modules/spv-mobile/ios/spv_mobileFFI.modulemap ]; then
+            cp modules/spv-mobile/ios/spv_mobileFFI.modulemap modules/spv-mobile/ios/Headers/module.modulemap
+          fi
+          ls -la modules/spv-mobile/ios/Headers
+
+      - name: Create SpvMobile.xcframework
+        working-directory: irium-wallet
+        run: |
+          rm -rf modules/spv-mobile/ios/SpvMobile.xcframework
+          xcodebuild -create-xcframework \
+            -library rust-bridge/target/aarch64-apple-ios/release/libspv_mobile.a \
+            -headers modules/spv-mobile/ios/Headers \
+            -library rust-bridge/target/aarch64-apple-ios-sim/release/libspv_mobile.a \
+            -headers modules/spv-mobile/ios/Headers \
+            -output modules/spv-mobile/ios/SpvMobile.xcframework
+
+      - name: Commit iOS artifacts back to main (if changed)
+        working-directory: irium-wallet
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add modules/spv-mobile/ios/spv_mobile.swift \
+                  modules/spv-mobile/ios/spv_mobileFFI.h \
+                  modules/spv-mobile/ios/Headers \
+                  modules/spv-mobile/ios/SpvMobile.xcframework
+          if git diff --cached --quiet; then
+            echo "iOS artifacts are unchanged from what is already on main; nothing to commit."
+            exit 0
+          fi
+          git commit -m "ci(ios): rebuild SpvMobile.xcframework + UniFFI Swift bindings
+
+Built on macos-latest from rust-bridge with UniFFI 0.29.
+Unsigned commit (no signing key configured for github-actions bot);
+GitHub UI marks this as Verified via web-flow signing.
+
+[skip ci]"
+          git push origin HEAD:main
