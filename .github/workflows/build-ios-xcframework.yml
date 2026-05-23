@@ -75,7 +75,7 @@ jobs:
       - name: Install uniffi-bindgen (must match uniffi 0.29 runtime in rust-bridge/Cargo.toml)
         run: |
           if ! command -v uniffi-bindgen >/dev/null 2>&1; then
-            cargo install --locked uniffi-bindgen --version 0.29.4
+            cargo install --locked uniffi --features cli --version 0.29.5
           fi
           uniffi-bindgen --version
 
