@@ -132,11 +132,9 @@ jobs:
             echo "iOS artifacts are unchanged from what is already on main; nothing to commit."
             exit 0
           fi
-          git commit -m "ci(ios): rebuild SpvMobile.xcframework + UniFFI Swift bindings
-
-Built on macos-latest from rust-bridge with UniFFI 0.29.
-Unsigned commit (no signing key configured for github-actions bot);
-GitHub UI marks this as Verified via web-flow signing.
-
-[skip ci]"
+          git commit \
+            -m "ci(ios): rebuild SpvMobile.xcframework + UniFFI Swift bindings" \
+            -m "Built on macos-latest from rust-bridge with UniFFI 0.29." \
+            -m "Unsigned commit (no signing key configured for github-actions bot); GitHub UI marks this as Verified via web-flow signing." \
+            -m "[skip ci]"
           git push origin HEAD:main
