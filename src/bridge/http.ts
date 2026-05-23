@@ -218,7 +218,13 @@ function buildAgreementBody(params: AgreementParams): Record<string, unknown> {
   const payerId = isOtc ? 'seller' : 'payer';
   const payeeId = isOtc ? 'buyer'  : 'payee';
   const refundAddress = isOtc ? params.payee_address : params.payer_address;
-  const releaseAuthorizer = isOtc ? 'seller' : 'payee';
+  // Canonical: every non-OTC builder in irium-source/src/settlement.rs sets
+  // release_authorizer = "payer" (the locker of funds). OTC uses "seller"
+  // because in OTC the seller IS the canonical payer (locks IRM in HTLC).
+  // Verified against build_simple_settlement_agreement (settlement.rs:1350),
+  // build_deposit_agreement (1419), build_milestone_agreement (1566),
+  // and build_otc_agreement (1494).
+  const releaseAuthorizer = isOtc ? 'seller' : 'payer';
 
   const now = params.creation_time ?? Math.floor(Date.now() / 1000);
 
@@ -252,6 +258,22 @@ function buildAgreementBody(params: AgreementParams): Record<string, unknown> {
       },
     ],
     milestones: [],
+    // refundable_deposit only: mirror the AgreementDepositRule that
+    // build_deposit_agreement (settlement.rs:1418-1422) populates.
+    // Beneficiary is the payee (gets the deposit on release); refund target
+    // is the payer (gets it back on timeout).
+    ...(isDeposit
+      ? {
+          deposit_rule: {
+            amount: params.total_amount_sats,
+            beneficiary_address: params.payee_address,
+            refund_address: params.payer_address,
+            timeout_height: params.timeout_height,
+            notes: params.purpose_reference ?? '',
+          },
+        }
+      : {}),
+    ...(params.purpose_reference ? { purpose_reference: params.purpose_reference } : {}),
     ...(params.asset_reference ? { asset_reference: params.asset_reference } : {}),
     ...(params.payment_reference ? { payment_reference: params.payment_reference } : {}),
     document_hash: params.document_hash ?? '0'.repeat(64),

@@ -48,6 +48,8 @@ export interface AgreementParams {
   secret_hash_hex: string;   // 64-char hex SHA256 of preimage
   asset_reference?: string;
   payment_reference?: string;
+  // refundable_deposit: top-level purpose_reference AND deposit_rule.notes.
+  purpose_reference?: string;
   document_hash?: string;    // 64-char hex; bridge defaults to zeros if omitted
   agreement_id?: string;     // bridge generates if omitted
   creation_time?: number;    // unix seconds; bridge fills with Date.now()/1000 if omitted
