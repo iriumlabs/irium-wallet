@@ -7,6 +7,16 @@ edition = "2021"
 name = "spv_mobile"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[features]
+# Opt-in feature for the in-project uniffi-bindgen binary. Lib/iOS/Android
+# builds leave it off so clap & friends never enter the dep graph.
+uniffi-cli = ["uniffi/cli"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["uniffi-cli"]
+
 [dependencies]
 irium-node-rs = { path = "../../irium-core/irium-source" }
 

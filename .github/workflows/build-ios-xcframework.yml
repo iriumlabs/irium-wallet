@@ -72,10 +72,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-rustbridge-
 
-      - name: Install uniffi-bindgen (must match uniffi 0.29 runtime in rust-bridge/Cargo.toml)
+      - name: Install uniffi-bindgen (from the in-project bin; version pin comes from rust-bridge/Cargo.toml's uniffi = "0.29")
         run: |
           if ! command -v uniffi-bindgen >/dev/null 2>&1; then
-            cargo install --locked uniffi --features cli --version 0.29.5
+            cargo install --path irium-wallet/rust-bridge --bin uniffi-bindgen --features uniffi-cli
           fi
           uniffi-bindgen --version
 
