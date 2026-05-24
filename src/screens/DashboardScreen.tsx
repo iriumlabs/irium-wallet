@@ -106,7 +106,7 @@ export function DashboardScreen() {
     setAddress, setAddressIndex, setBalance, setHistory, setUtxos,
     rpcUrl, authToken,
   } = useWalletStore();
-  const { nodeStatus, peerCount, isSyncing, lastRefresh, touchRefresh } = useNodeStore();
+  const { peerCount, isSyncing, syncedHeight, lastRefresh, touchRefresh } = useNodeStore();
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -185,8 +185,18 @@ export function DashboardScreen() {
   }, [address, rpcUrl, authToken, setBalance, setUtxos, setHistory, touchRefresh]);
 
   const isLoading = lastRefresh === 0 && !error;
-  const synced    = !isSyncing && nodeStatus != null;
-  const currentHeight = nodeStatus?.height ?? 0;
+
+  // Header status sources from the NATIVE P2P light client (peerCount,
+  // isSyncing, syncedHeight from useNodeStore — all populated by the
+  // native module via useSync). It does NOT read nodeStatus.height,
+  // which is rpc-derived and only populates when a custom node is
+  // configured. This makes the header honest for wallets with no
+  // custom node: it shows what the light client actually knows.
+  const currentHeight = syncedHeight;
+  const connectionState: 'connecting' | 'syncing' | 'live' =
+    peerCount === 0 ? 'connecting' :
+    isSyncing      ? 'syncing'    :
+                     'live';
 
   return (
     <SafeAreaView style={styles.root}>
@@ -199,9 +209,34 @@ export function DashboardScreen() {
             <Ionicons name="cube-outline" size={20} color={Colors.primary} />
           </View>
           <View style={styles.headerStatus}>
-            <View style={[styles.statusDot, { backgroundColor: synced ? Colors.success : Colors.warning }]} />
-            <Text style={styles.statusLabel} numberOfLines={1}>
-              {synced ? `LIVE #${currentHeight.toLocaleString()}` : 'SYNCING'}
+            <View
+              style={[
+                styles.statusDot,
+                {
+                  backgroundColor:
+                    connectionState === 'live'    ? Colors.success  :
+                    connectionState === 'syncing' ? Colors.warning  :
+                                                    Colors.textMuted,
+                },
+              ]}
+            />
+            <Text
+              style={[
+                styles.statusLabel,
+                {
+                  color:
+                    connectionState === 'live'    ? Colors.success  :
+                    connectionState === 'syncing' ? Colors.warning  :
+                                                    Colors.textMuted,
+                },
+              ]}
+              numberOfLines={1}
+            >
+              {connectionState === 'live'
+                ? `Live · #${currentHeight.toLocaleString()}`
+                : connectionState === 'syncing'
+                  ? 'Syncing'
+                  : 'Connecting…'}
             </Text>
           </View>
           <View style={styles.headerRight}>
@@ -349,8 +384,7 @@ const styles = StyleSheet.create({
   statusLabel: {
     fontSize: 11,
     fontFamily: Fonts.semiBold,
-    color: Colors.success,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   headerRight: {
     flexDirection: 'row',

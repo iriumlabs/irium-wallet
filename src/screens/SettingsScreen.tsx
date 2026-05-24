@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  TouchableOpacity, StatusBar, Alert, Modal, ActivityIndicator,
+  TouchableOpacity, StatusBar, Modal, ActivityIndicator,
   FlatList, Pressable, Animated,
 } from 'react-native';
 import { useScreenEnter } from '../hooks/useScreenEnter';
@@ -20,6 +20,8 @@ import { Card } from '../components/Card';
 import { AddressText } from '../components/AddressText';
 import { PeerIndicator } from '../components/PeerIndicator';
 import { Colors, Typography, Fonts } from '../components/theme';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { useToast } from '../components/Toast';
 
 const AUTH_METHOD_KEY = 'irium_auth_method';
 const AUTH_PIN_KEY    = 'irium_auth_pin';
@@ -34,11 +36,12 @@ const TOTAL_SUPPLY = '100,000,000 IRM';
 const NEXT_HALVING = 'Block #50,000';
 
 export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
+  const toast = useToast();
   const enterStyle = useScreenEnter();
   const { rpcUrl, authToken, extraPeer, address, seedHex, wif, balance, setRpcUrl, setAuthToken, setExtraPeer, clear } = useWalletStore();
   const { nodeStatus, syncedHeight, peerCount, isSyncing } = useNodeStore();
 
-  const [url, setUrl] = useState(rpcUrl);
+  const [url, setUrl] = useState(rpcUrl ?? '');
   const [token, setToken] = useState(authToken ?? '');
   const [peer, setPeer] = useState(extraPeer ?? '');
   const [testing, setTesting] = useState(false);
@@ -81,6 +84,12 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
   // Theme state
   const [activeTheme, setActiveTheme]         = useState<ThemeKey>('dark');
 
+  // Category C confirmation modals
+  const [confirmSeedVisible, setConfirmSeedVisible]     = useState(false);
+  const [confirmWifVisible, setConfirmWifVisible]       = useState(false);
+  const [removeAddressTarget, setRemoveAddressTarget]   = useState<number | null>(null);
+  const [confirmDeleteVisible, setConfirmDeleteVisible] = useState(false);
+
   useEffect(() => {
     // Load auth method
     SecureStore.getItemAsync(AUTH_METHOD_KEY).then((v) => {
@@ -104,7 +113,7 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
     setTestResult(null);
     try {
       const s = await bridge.rpcGetStatus(url.trim(), token.trim() || undefined);
-      setTestResult(`Connected — block ${s.height.toLocaleString()}, ${s.peer_count} peers`);
+      setTestResult(`Node reachable · block ${s.height.toLocaleString()}`);
       setTestOk(true);
     } catch (e: any) {
       setTestResult(`Failed: ${e.message ?? 'connection error'}`);
@@ -115,37 +124,26 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
   }
 
   function save() {
-    setRpcUrl(url.trim());
+    setRpcUrl(url.trim() || null);
     setAuthToken(token.trim() || undefined);
     setExtraPeer(peer.trim() || undefined);
-    Alert.alert('Saved', 'Settings updated');
+    toast.show(
+      url.trim() ? 'Node saved' : 'Node settings removed',
+      'success',
+    );
   }
 
   function confirmRevealSeed() {
-    Alert.alert(
-      'View recovery phrase',
-      'Your 24-word recovery phrase gives full access to your wallet. Only view this in a private place.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Show phrase', onPress: () => { setPinTarget('seed'); setPinVisible(true); } },
-      ],
-    );
+    setConfirmSeedVisible(true);
   }
 
   function confirmRevealWif() {
-    Alert.alert(
-      'View private key (WIF)',
-      'Your WIF private key controls address #0. Keep it secret.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Show key', onPress: () => { setPinTarget('wif'); setPinVisible(true); } },
-      ],
-    );
+    setConfirmWifVisible(true);
   }
 
   function submitPin() {
     if (!pinInput.trim()) {
-      Alert.alert('PIN required', 'Enter your PIN to continue');
+      toast.show('Enter your PIN to continue', 'error');
       return;
     }
     setPinVisible(false);
@@ -157,13 +155,13 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
   async function copySeed() {
     if (!seedHex) return;
     await Clipboard.setStringAsync(seedHex);
-    Alert.alert('Copied', 'Seed hex copied — keep it safe!');
+    toast.show('Seed hex copied — keep it safe', 'success');
   }
 
   async function copyWif() {
     if (!wif) return;
     await Clipboard.setStringAsync(wif);
-    Alert.alert('Copied', 'WIF key copied — keep it secret!');
+    toast.show('WIF key copied — keep it secret', 'success');
   }
 
   // ── Wallet management ──────────────────────────────────────────────────────
@@ -180,7 +178,7 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
       );
       setAllAddresses(addrs);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to derive addresses');
+      toast.show(e?.message ?? 'Failed to derive addresses', 'error');
     } finally {
       setDerivingAll(false);
     }
@@ -188,38 +186,20 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
 
   function confirmDeleteAddress(index: number) {
     if (index === 0) {
-      Alert.alert('Cannot Delete', 'The primary address (#0) cannot be deleted.');
+      toast.show('Primary address (#0) cannot be deleted', 'error');
       return;
     }
     const { addressIndex } = useWalletStore.getState();
     const isActive = index === addressIndex;
     const activeHasBalance = isActive && (balance?.confirmed ?? 0) > 0;
     if (activeHasBalance) {
-      Alert.alert(
-        'Cannot Delete',
-        `This address has a balance of ${((balance?.confirmed ?? 0) / 1e8).toFixed(8)} IRM. Move funds out before deleting.`,
+      toast.show(
+        `Address has a balance of ${((balance?.confirmed ?? 0) / 1e8).toFixed(8)} IRM — move funds out first`,
+        'error',
       );
       return;
     }
-    Alert.alert(
-      'Remove Address',
-      `Remove address #${index} from your wallet view?\n\nThe address can always be re-derived from your seed phrase.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => {
-            setAllAddresses((prev) => prev.filter((_, i) => i !== index));
-            if (isActive) {
-              const { setAddressIndex, setAddress } = useWalletStore.getState();
-              setAddressIndex(0);
-              if (allAddresses[0]) setAddress(allAddresses[0]);
-            }
-          },
-        },
-      ],
-    );
+    setRemoveAddressTarget(index);
   }
 
   async function openCreateNewAddress() {
@@ -241,7 +221,7 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
       setCreateAddr(addr);
       setCreateWif(wifKey);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to derive address');
+      toast.show(e?.message ?? 'Failed to derive address', 'error');
       setCreateModalVisible(false);
     } finally {
       setCreateLoading(false);
@@ -256,7 +236,7 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
     setCreateModalVisible(false);
     // Reset cached list so the next "View All" re-derives
     setAllAddresses([]);
-    Alert.alert('Address Added', `Address #${createIndex} is now your active address`);
+    toast.show(`Address #${createIndex} is now active`, 'success');
   }
 
   async function importFromBackupFile() {
@@ -286,15 +266,15 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
         const addr = await bridge.deriveAddress(importedSeed, 0);
         setAddress(addr);
       }
-      Alert.alert(
-        'Imported',
+      toast.show(
         importedSeed
-          ? `Wallet restored. ${importedAddresses.length > 0 ? `${importedAddresses.length} addresses found.` : ''}`
+          ? `Wallet restored${importedAddresses.length > 0 ? ` — ${importedAddresses.length} addresses found` : ''}`
           : `${importedAddresses.length} addresses found in backup`,
+        'success',
       );
       setAllAddresses([]);
     } catch (e: any) {
-      Alert.alert('Import failed', e?.message ?? 'Could not read or parse file');
+      toast.show(e?.message ?? 'Could not read or parse file', 'error');
     } finally {
       setImportingFile(false);
     }
@@ -311,14 +291,14 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
         await setSeedHex(trimmed);
         const addr = await bridge.deriveAddress(trimmed, 0);
         useWalletStore.getState().setAddress(addr);
-        Alert.alert('Imported', 'Wallet imported via seed hex');
+        toast.show('Wallet imported via seed hex', 'success');
       } else {
-        Alert.alert('Coming Soon', 'WIF import will be available in the next update');
+        toast.show('WIF import coming soon', 'info');
       }
       setImportMode(null);
       setImportInput('');
     } catch (e: any) {
-      Alert.alert('Import failed', e.message ?? 'Invalid input');
+      toast.show(e?.message ?? 'Invalid input', 'error');
     } finally {
       setImportLoading(false);
     }
@@ -333,9 +313,9 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
     if (result.success) {
       await SecureStore.setItemAsync(AUTH_METHOD_KEY, 'biometric');
       setAuthMethodState('biometric');
-      Alert.alert('Enabled', 'Biometric lock enabled');
+      toast.show('Biometric lock enabled', 'success');
     } else {
-      Alert.alert('Failed', 'Authentication failed — biometric lock not enabled');
+      toast.show('Authentication failed — biometric lock not enabled', 'error');
     }
   }
 
@@ -355,17 +335,17 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
     await SecureStore.deleteItemAsync(AUTH_METHOD_KEY);
     await SecureStore.deleteItemAsync(AUTH_PIN_KEY);
     setAuthMethodState('none');
-    Alert.alert('Disabled', 'App lock removed');
+    toast.show('App lock removed', 'info');
   }
 
   async function savePin() {
     if (pinStep === 'new') {
-      if (newPin.length < 4) { Alert.alert('Too short', 'PIN must be at least 4 digits'); return; }
+      if (newPin.length < 4) { toast.show('PIN must be at least 4 digits', 'error'); return; }
       setPinStep('confirm');
       return;
     }
     if (confirmPin !== newPin) {
-      Alert.alert('Mismatch', 'PINs do not match');
+      toast.show('PINs do not match', 'error');
       setConfirmPin('');
       return;
     }
@@ -376,7 +356,7 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
     setNewPin('');
     setConfirmPin('');
     setPinStep('new');
-    Alert.alert('PIN set', 'PIN lock enabled');
+    toast.show('PIN lock enabled', 'success');
   }
 
   // ── Themes ─────────────────────────────────────────────────────────────────
@@ -384,39 +364,11 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
   async function selectTheme(t: ThemeKey) {
     setActiveTheme(t);
     await AsyncStorage.setItem(THEME_KEY, t);
-    Alert.alert('Theme saved', 'Restart the app to apply the new theme.');
+    toast.show('Theme saved — restart to apply', 'info');
   }
 
   function confirmLogout() {
-    Alert.alert(
-      'Delete wallet',
-      'This will erase your seed from this device. Make sure you have your recovery phrase.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert(
-              'Are you sure?',
-              'This action cannot be undone. Your funds will be unrecoverable without the phrase.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete permanently',
-                  style: 'destructive',
-                  onPress: async () => {
-                    bridge.stopLightClient();
-                    await clear();
-                    onLogout();
-                  },
-                },
-              ],
-            );
-          },
-        },
-      ],
-    );
+    setConfirmDeleteVisible(true);
   }
 
   return (
@@ -429,8 +381,8 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
         {/* Node status */}
         <Card style={{ marginBottom: 16, gap: 10 }}>
           <Text style={[Typography.h3, { marginBottom: 4 }]}>Node status</Text>
-          <StatusRow label="RPC height" value={nodeStatus ? nodeStatus.height.toLocaleString() : '—'} />
-          <StatusRow label="SPV height" value={syncedHeight > 0 ? syncedHeight.toLocaleString() : '—'} />
+          <StatusRow label="Node height" value={nodeStatus ? nodeStatus.height.toLocaleString() : '—'} />
+          <StatusRow label="Network height" value={syncedHeight > 0 ? syncedHeight.toLocaleString() : '—'} />
           <StatusRow label="Tip" value={nodeStatus ? nodeStatus.tip_hash.slice(0, 16) + '…' : '—'} mono />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={Typography.caption}>Network</Text>
@@ -446,12 +398,47 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
           </Card>
         )}
 
-        {/* RPC config */}
+        {/* Advanced */}
         <Card style={{ marginBottom: 16, gap: 14 }}>
-          <Text style={Typography.h3}>RPC endpoint</Text>
-          <LabeledInput label="URL" value={url} onChangeText={setUrl} placeholder="http://..." keyboardType="url" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={Typography.h3}>Advanced</Text>
+            <View
+              style={{
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+                borderRadius: 6,
+                backgroundColor: rpcUrl ? Colors.success + '22' : Colors.textMuted + '22',
+              }}
+            >
+              <Text
+                style={{
+                  color: rpcUrl ? Colors.success : Colors.textMuted,
+                  fontSize: 11,
+                  fontWeight: '600',
+                }}
+              >
+                {rpcUrl ? 'Active' : 'Not configured'}
+              </Text>
+            </View>
+          </View>
+          <Text style={[Typography.caption, { marginTop: -4 }]}>
+            The wallet connects to the Irium network automatically. Only configure this
+            if you run your own node.
+          </Text>
+          <LabeledInput
+            label="Node URL (optional)"
+            value={url}
+            onChangeText={setUrl}
+            placeholder="http://my-node.example.com:38300"
+            keyboardType="url"
+          />
           <LabeledInput label="Auth token (optional)" value={token} onChangeText={setToken} placeholder="Bearer token" secure />
-          <LabeledInput label="Extra P2P peer (optional)" value={peer} onChangeText={setPeer} placeholder="/ip4/1.2.3.4/tcp/38291" />
+          <LabeledInput
+            label="Extra P2P peer (optional)"
+            value={peer}
+            onChangeText={setPeer}
+            placeholder="/ip4/1.2.3.4/tcp/38291"
+          />
 
           {testResult !== null && (
             <View style={[styles.testResult, { backgroundColor: testOk ? '#001a10' : '#1a0000' }]}>
@@ -460,7 +447,11 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
           )}
 
           <View style={styles.btnRow}>
-            <TouchableOpacity style={[styles.halfBtn, { borderColor: Colors.primary }]} onPress={testRpc} disabled={testing}>
+            <TouchableOpacity
+              style={[styles.halfBtn, { borderColor: Colors.primary }, !url.trim() && { opacity: 0.4 }]}
+              onPress={testRpc}
+              disabled={testing || !url.trim()}
+            >
               <Text style={{ color: Colors.primary, fontWeight: '600' }}>{testing ? 'Testing…' : 'Test'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.halfBtn, { backgroundColor: Colors.primary, borderColor: Colors.primary }]} onPress={save}>
@@ -664,7 +655,7 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
                   <Text style={styles.kvValue} selectable numberOfLines={1}>{createAddr}</Text>
                   <TouchableOpacity
                     style={styles.copyChip}
-                    onPress={async () => { await Clipboard.setStringAsync(createAddr); Alert.alert('Copied', 'Address copied'); }}
+                    onPress={async () => { await Clipboard.setStringAsync(createAddr); toast.show('Address copied', 'success'); }}
                   >
                     <Ionicons name="copy-outline" size={14} color={Colors.primary} />
                     <Text style={styles.copyChipText}>Copy</Text>
@@ -687,7 +678,7 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.copyChip}
-                      onPress={async () => { await Clipboard.setStringAsync(createWif); Alert.alert('Copied', 'WIF key copied — keep it secret!'); }}
+                      onPress={async () => { await Clipboard.setStringAsync(createWif); toast.show('WIF key copied — keep it secret', 'success'); }}
                     >
                       <Ionicons name="copy-outline" size={14} color={Colors.primary} />
                       <Text style={styles.copyChipText}>Copy</Text>
@@ -772,7 +763,7 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
                       <Text style={styles.addrSheetIdx}>#{i}</Text>
                       <Text style={styles.addrSheetText} numberOfLines={1}>{addr}</Text>
                       <TouchableOpacity
-                        onPress={async () => { await Clipboard.setStringAsync(addr); Alert.alert('Copied', `Address #${i} copied`); }}
+                        onPress={async () => { await Clipboard.setStringAsync(addr); toast.show(`Address #${i} copied`, 'success'); }}
                         style={styles.addrRowIconBtn}
                         hitSlop={8}
                       >
@@ -885,6 +876,79 @@ export function SettingsScreen({ onLogout }: { onLogout: () => void }) {
           </View>
         </View>
       </Modal>
+
+      {/* ── Category C confirmation modals ── */}
+      <ConfirmModal
+        visible={confirmSeedVisible}
+        title="View recovery phrase"
+        body="Your recovery phrase gives full access to your wallet. Only view this in a private place."
+        confirmLabel="Show phrase"
+        warning
+        onConfirm={() => {
+          setConfirmSeedVisible(false);
+          setPinTarget('seed');
+          setPinVisible(true);
+        }}
+        onCancel={() => setConfirmSeedVisible(false)}
+      />
+
+      <ConfirmModal
+        visible={confirmWifVisible}
+        title="View private key (WIF)"
+        body="Your private key gives full control of your funds. Only view this in a private place."
+        confirmLabel="Show key"
+        warning
+        onConfirm={() => {
+          setConfirmWifVisible(false);
+          setPinTarget('wif');
+          setPinVisible(true);
+        }}
+        onCancel={() => setConfirmWifVisible(false)}
+      />
+
+      <ConfirmModal
+        visible={removeAddressTarget !== null}
+        title="Remove address"
+        body={
+          removeAddressTarget !== null
+            ? `Remove address #${removeAddressTarget}? This address will no longer appear in your wallet.`
+            : ''
+        }
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          const idx = removeAddressTarget;
+          if (idx === null) return;
+          const { addressIndex, setAddressIndex, setAddress } = useWalletStore.getState();
+          const wasActive = idx === addressIndex;
+          setAllAddresses((prev) => prev.filter((_, i) => i !== idx));
+          if (wasActive) {
+            setAddressIndex(0);
+            if (allAddresses[0]) setAddress(allAddresses[0]);
+          }
+          setRemoveAddressTarget(null);
+        }}
+        onCancel={() => setRemoveAddressTarget(null)}
+      />
+
+      <ConfirmModal
+        visible={confirmDeleteVisible}
+        title="Delete wallet"
+        body="This permanently removes your wallet from this device. You will need your recovery phrase to restore it."
+        confirmLabel="Delete permanently"
+        cancelLabel="Cancel"
+        destructive
+        checkConfirm
+        checkLabel="I have saved my recovery phrase"
+        dismissOnBackdrop={false}
+        onConfirm={async () => {
+          bridge.stopLightClient();
+          await clear();
+          setConfirmDeleteVisible(false);
+          onLogout();
+        }}
+        onCancel={() => setConfirmDeleteVisible(false)}
+      />
     </SafeAreaView>
   );
 }

@@ -18,15 +18,22 @@ import { OnboardingNavigator } from './src/navigation/OnboardingNavigator';
 import { MainNavigator } from './src/navigation/MainNavigator';
 import { IriumSplash } from './src/screens/SplashScreen';
 import { AuthLockScreen } from './src/screens/AuthLockScreen';
+import { ToastProvider } from './src/components/Toast';
 import { Colors } from './src/components/theme';
 
 const AUTH_METHOD_KEY = 'irium_auth_method';
 type AuthMethod = 'none' | 'pin' | 'biometric';
 
 function WalletApp({ onLogout }: { onLogout: () => void }) {
-  usePeers();
   return <MainNavigator onLogout={onLogout} />;
 }
+
+// Mounted at the App root once stores are loaded — keeps the light
+// client running across splash → onboarding → wallet so peers are
+// already connected by the time the user reaches the Dashboard. The
+// "already running" path in usePeers handles re-mounts gracefully as
+// the user transitions between top-level UI states.
+function PeersHost() { usePeers(); return null; }
 
 export default function App() {
   const [ready, setReady]           = useState(false);
@@ -79,6 +86,7 @@ export default function App() {
   if (showSplash) {
     return (
       <View style={styles.root}>
+        <PeersHost />
         <IriumSplash hasWallet={hasWallet} onDone={() => setShowSplash(false)} />
       </View>
     );
@@ -88,31 +96,37 @@ export default function App() {
   if (hasWallet && authMethod !== 'none' && !unlocked) {
     return (
       <SafeAreaProvider>
-        <AuthLockScreen method={authMethod} onUnlock={() => setUnlocked(true)} />
+        <PeersHost />
+        <ToastProvider>
+          <AuthLockScreen method={authMethod} onUnlock={() => setUnlocked(true)} />
+        </ToastProvider>
       </SafeAreaProvider>
     );
   }
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        {hasWallet ? (
-          <WalletApp onLogout={() => { setHasWallet(false); setUnlocked(false); setAuthMethod('none'); }} />
-        ) : (
-          <OnboardingNavigator
-            onComplete={async () => {
-              // Re-read auth method (it may have been set during onboarding)
-              try {
-                const m = await SecureStore.getItemAsync(AUTH_METHOD_KEY);
-                setAuthMethod((m === 'pin' || m === 'biometric') ? m : 'none');
-              } catch {}
-              // Mark unlocked so we go straight to MainTabs without re-prompting
-              setUnlocked(true);
-              setHasWallet(true);
-            }}
-          />
-        )}
-      </NavigationContainer>
+      <PeersHost />
+      <ToastProvider>
+        <NavigationContainer>
+          {hasWallet ? (
+            <WalletApp onLogout={() => { setHasWallet(false); setUnlocked(false); setAuthMethod('none'); }} />
+          ) : (
+            <OnboardingNavigator
+              onComplete={async () => {
+                // Re-read auth method (it may have been set during onboarding)
+                try {
+                  const m = await SecureStore.getItemAsync(AUTH_METHOD_KEY);
+                  setAuthMethod((m === 'pin' || m === 'biometric') ? m : 'none');
+                } catch {}
+                // Mark unlocked so we go straight to MainTabs without re-prompting
+                setUnlocked(true);
+                setHasWallet(true);
+              }}
+            />
+          )}
+        </NavigationContainer>
+      </ToastProvider>
     </SafeAreaProvider>
   );
 }

@@ -18,7 +18,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  StatusBar, Alert, TouchableOpacity, Animated,
+  StatusBar, TouchableOpacity, Animated,
 } from 'react-native';
 import { useScreenEnter } from '../hooks/useScreenEnter';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,6 +28,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { GradientButton } from '../components/GradientButton';
 import { Card } from '../components/Card';
 import { Colors, Typography, Fonts } from '../components/theme';
+import { useToast } from '../components/Toast';
 import type { SettlementStackParams } from '../navigation/SettlementNavigator';
 
 type Nav = NativeStackNavigationProp<SettlementStackParams, 'MilestoneWizard'>;
@@ -46,7 +47,18 @@ function parseSats(irmValue: string): number {
   return Math.floor(parseFloat(irmValue || '0') * 1e8);
 }
 
+// KNOWN ISSUE: milestone_id is not plumbed through to
+// agreementReleaseEligibility, agreementRefundEligibility,
+// buildAgreementRelease, or buildAgreementRefund RPC calls.
+// This means milestone agreements cannot be correctly inspected
+// or spent (released/refunded) even with a custom node configured.
+// The iriumd RPC layer requires milestone_id to identify the correct
+// HTLC leg — without it, iriumd returns agreement_funding_leg_ambiguous.
+// Fix tracked as: [follow-up — milestone_id plumbing through all
+// settlement wizard RPC calls]
+
 export function MilestoneWizardScreen() {
+  const toast = useToast();
   const nav = useNavigation<Nav>();
   const enterStyle = useScreenEnter();
 
@@ -79,21 +91,21 @@ export function MilestoneWizardScreen() {
 
   function validateStep2(): boolean {
     if (!projectName.trim()) {
-      Alert.alert('Required', 'Enter a project name'); return false;
+      toast.show('Enter a project name', 'error'); return false;
     }
     if (milestones.length === 0) {
-      Alert.alert('Required', 'Add at least one milestone'); return false;
+      toast.show('Add at least one milestone', 'error'); return false;
     }
     for (let i = 0; i < milestones.length; i++) {
       const m = milestones[i];
       if (!m.name.trim()) {
-        Alert.alert('Required', `Enter a name for milestone ${i + 1}`); return false;
+        toast.show(`Enter a name for milestone ${i + 1}`, 'error'); return false;
       }
       if (parseSats(m.amount) <= 0) {
-        Alert.alert('Required', `Enter a valid amount for milestone ${i + 1}`); return false;
+        toast.show(`Enter a valid amount for milestone ${i + 1}`, 'error'); return false;
       }
       if (!m.deadline.trim() || isNaN(parseInt(m.deadline, 10))) {
-        Alert.alert('Required', `Enter a valid deadline block for milestone ${i + 1}`); return false;
+        toast.show(`Enter a valid deadline for milestone ${i + 1}`, 'error'); return false;
       }
     }
     return true;
@@ -232,10 +244,7 @@ export function MilestoneWizardScreen() {
             <GradientButton
               label="Create Agreement →"
               onPress={() => {
-                Alert.alert(
-                  'Not yet implemented',
-                  'The milestone settlement template requires per-leg HTLCs (each milestone needs its own secret hash, funding tx, and release/refund flow). The mobile wallet does not support this template yet. Use OTC, Freelance, or Deposit instead.',
-                );
+                toast.show('Milestone template is not implemented yet — use OTC, Freelance, or Deposit', 'info');
               }}
             />
             <TouchableOpacity style={styles.editBtn} onPress={() => setStep(2)}>

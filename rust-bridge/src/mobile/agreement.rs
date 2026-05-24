@@ -2,8 +2,8 @@ use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use irium_node_rs::settlement::{
-    AgreementDeadlines, AgreementObject, AgreementParty, AgreementRefundCondition,
-    AgreementReleaseCondition, AgreementTemplateType, AGREEMENT_NETWORK_MARKER,
+    agreement_canonical_bytes, AgreementDeadlines, AgreementObject, AgreementParty,
+    AgreementRefundCondition, AgreementReleaseCondition, AgreementTemplateType, AGREEMENT_NETWORK_MARKER,
     AGREEMENT_OBJECT_VERSION, AGREEMENT_SCHEMA_ID_V1,
 };
 
@@ -19,9 +19,19 @@ pub struct AgreementParams {
     pub document_hash: Option<String>,
 }
 
-/// SHA256 of the agreement JSON bytes, returned as lowercase hex.
+/// SHA256 of the CANONICAL agreement bytes, returned as lowercase hex.
+/// Matches iriumd's compute_agreement_hash_hex byte-for-byte by going
+/// through the same agreement_canonical_bytes helper from irium-source:
+/// parse JSON -> AgreementObject -> serde_json::to_value -> sort_json
+/// (recursive lexicographic key sort) -> serde_json::to_vec (compact)
+/// -> SHA256. Input JSON shape is hash-invariant: omitting a no-skip
+/// Option<None> field vs sending it as null both deserialize to None and
+/// re-serialize identically through the typed struct.
 pub fn compute_agreement_hash(agreement_json: &str) -> Result<String, String> {
-    let hash = Sha256::digest(agreement_json.as_bytes());
+    let agreement: AgreementObject = serde_json::from_str(agreement_json)
+        .map_err(|e| format!("parse agreement JSON: {e}"))?;
+    let bytes = agreement_canonical_bytes(&agreement)?;
+    let hash = Sha256::digest(&bytes);
     Ok(hex::encode(hash))
 }
 

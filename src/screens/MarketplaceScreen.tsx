@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, StatusBar,
-  TouchableOpacity, Animated, Alert, RefreshControl, ActivityIndicator,
+  TouchableOpacity, Animated, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useWalletStore } from '../store/wallet';
 import { Colors, Fonts } from '../components/theme';
 import { SwipeableRow } from '../components/SwipeableRow';
+import { ConfirmModal } from '../components/ConfirmModal';
 import type { MarketplaceStackParams, MarketOfferData } from '../navigation/MarketplaceNavigator';
 
 type Nav = NativeStackNavigationProp<MarketplaceStackParams, 'Feed'>;
@@ -135,12 +136,13 @@ export function MarketplaceScreen() {
   const [filter, setFilter]       = useState<StatusFilter>('all');
   const [openRowKey, setOpenRowKey] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [hideTarget, setHideTarget] = useState<string | null>(null);
 
   const fetchOffers = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      if (!rpcUrl) throw new Error('No RPC URL configured — set one in Settings');
+      if (!rpcUrl) throw new Error('Connect your node in Settings → Advanced');
       const resp = await fetch(`${rpcUrl.replace(/\/$/, '')}/offers/feed`, {
         method: 'GET',
         headers: { Accept: 'application/json' },
@@ -153,7 +155,7 @@ export function MarketplaceScreen() {
       // Real failure — surface it. No fake fallback data, otherwise users
       // would see synthetic offers and think the marketplace is working.
       setOffers([]);
-      setError(e?.message ?? 'Could not reach node');
+      setError(e?.message ?? 'Could not reach your node');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -176,7 +178,7 @@ export function MarketplaceScreen() {
         <Text style={styles.headerTitle}>Marketplace</Text>
         <Text style={styles.headerSub}>
           {error
-            ? `Could not reach node — check Settings > RPC URL`
+            ? `Could not reach your node — check Settings → Advanced`
             : `${offers.length} offer${offers.length === 1 ? '' : 's'} from your node`}
         </Text>
       </View>
@@ -220,14 +222,7 @@ export function MarketplaceScreen() {
               actionLabel="Hide"
               actionIcon="eye-off-outline"
               actionColor={Colors.danger}
-              onAction={() => Alert.alert('Hide', `Hide offer ${item.offer_id} locally?`, [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Hide',
-                  style: 'destructive',
-                  onPress: () => setOffers((prev) => prev.filter((o) => o.offer_id !== item.offer_id)),
-                },
-              ])}
+              onAction={() => setHideTarget(item.offer_id)}
             >
               <OfferCard
                 offer={item}
@@ -246,6 +241,19 @@ export function MarketplaceScreen() {
           }
         />
       )}
+
+      <ConfirmModal
+        visible={hideTarget !== null}
+        title="Hide offer"
+        body="Remove this offer from your local view. It will reappear next time you refresh."
+        confirmLabel="Hide"
+        destructive
+        onConfirm={() => {
+          setOffers((prev) => prev.filter((o) => o.offer_id !== hideTarget));
+          setHideTarget(null);
+        }}
+        onCancel={() => setHideTarget(null)}
+      />
     </SafeAreaView>
   );
 }

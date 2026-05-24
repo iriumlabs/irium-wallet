@@ -7,7 +7,6 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
-  Alert,
   Animated,
   Pressable,
 } from 'react-native';
@@ -19,6 +18,7 @@ import { OnboardingStackParams } from '../../navigation/OnboardingNavigator';
 import { bridge } from '../../bridge';
 import { useWalletStore } from '../../store/wallet';
 import { Colors, Fonts, GradientColors } from '../../components/theme';
+import { useToast } from '../../components/Toast';
 import { DeepSpaceBg } from '../../components/onboarding/DeepSpaceBg';
 import { StepDots } from '../../components/onboarding/StepDots';
 
@@ -75,6 +75,7 @@ function GradientBtn({
 }
 
 export function MnemonicScreen({ navigation, route }: Props) {
+  const toast = useToast();
   const { mode } = route.params;
   const isCreate = mode === 'create';
 
@@ -116,7 +117,7 @@ export function MnemonicScreen({ navigation, route }: Props) {
         setSeedPreview(seed);
         setWifPreview(wif);
       } catch (e: any) {
-        Alert.alert('Error', e.message ?? 'Failed to generate wallet');
+        toast.show(e?.message ?? 'Failed to generate wallet', 'error');
       }
     })();
   }, [isCreate]);
@@ -169,13 +170,13 @@ export function MnemonicScreen({ navigation, route }: Props) {
   async function copyAllWords() {
     const words = mnemonic.trim().split(/\s+/).filter(Boolean);
     await Clipboard.setStringAsync(words.join(' '));
-    Alert.alert('Copied', 'Recovery phrase copied to clipboard');
+    toast.show('Recovery phrase copied', 'success');
   }
 
   async function proceedImport() {
     const words = mnemonic.trim().split(/\s+/);
     if (words.length !== 12 && words.length !== 24) {
-      Alert.alert('Invalid mnemonic', 'Please enter 12 or 24 words.');
+      toast.show('Please enter 12 or 24 words', 'error');
       return;
     }
     setLoading(true);
@@ -186,9 +187,9 @@ export function MnemonicScreen({ navigation, route }: Props) {
       await setSeedHex(seed);
       await setWif(wif);
       setAddress(addr);
-      navigation.push('Connecting', { mode: 'import' });
+      navigation.push('SecureWallet');
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to process mnemonic');
+      toast.show(e?.message ?? 'Failed to process mnemonic', 'error');
     } finally {
       setLoading(false);
     }

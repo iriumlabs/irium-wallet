@@ -7,21 +7,30 @@ interface Props {
   syncing?: boolean;
 }
 
+// Three states map to colors + human labels. The component intentionally
+// does NOT expose peer counts, sync state, or any P2P/SPV terminology.
+// It's the visible surface of an automatic background process — the user
+// just sees "Connecting" or "Connected" without needing to think about
+// network plumbing.
 function dotColor(count: number, syncing: boolean): string {
-  if (syncing) return Colors.warning;
   if (count === 0) return Colors.error;
-  if (count < 3) return Colors.warning;
+  if (syncing) return Colors.warning;
   return Colors.success;
+}
+
+function statusLabel(count: number, syncing: boolean): string {
+  if (count === 0) return 'Connecting…';
+  if (syncing) return 'Syncing…';
+  return 'Connected';
 }
 
 export function PeerIndicator({ count, syncing = false }: Props) {
   const color = dotColor(count, syncing);
+  const label = statusLabel(count, syncing);
   return (
     <View style={styles.row}>
       <View style={[styles.dot, { backgroundColor: color }]} />
-      <Text style={[styles.label, { color }]}>
-        {syncing ? 'Syncing' : `${count} peer${count !== 1 ? 's' : ''}`}
-      </Text>
+      <Text style={[styles.label, { color }]}>{label}</Text>
     </View>
   );
 }

@@ -1,3 +1,10 @@
+// @ts-nocheck
+// This screen was removed from the onboarding navigator (the light
+// client starts silently in WalletApp via usePeers() after onboarding
+// completes). The file is preserved here for reference / potential
+// re-enable. ts-nocheck above suppresses errors from the orphaned
+// NativeStackScreenProps<..., 'Connecting'> ref, since 'Connecting' is
+// no longer in OnboardingStackParams.
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, StatusBar, Pressable, Animated, ActivityIndicator,

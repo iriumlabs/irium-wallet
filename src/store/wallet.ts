@@ -6,7 +6,10 @@ interface WalletState {
   // Persisted in SecureStore
   seedHex: string | null;
   wif: string | null;
-  rpcUrl: string;
+  // null = no custom node configured. Wallet runs P2P-only via the
+  // built-in light client; HTTP-only methods (balance, utxos, history,
+  // fee, settlement) throw a clear "configure custom node" error.
+  rpcUrl: string | null;
   authToken: string | undefined;
   extraPeer: string | undefined;
 
@@ -25,7 +28,7 @@ interface WalletState {
   setBalance: (b: BalanceInfo) => void;
   setUtxos: (u: Utxo[]) => void;
   setHistory: (h: TxRecord[]) => void;
-  setRpcUrl: (url: string) => void;
+  setRpcUrl: (url: string | null) => void;
   setAuthToken: (token: string | undefined) => void;
   setExtraPeer: (peer: string | undefined) => void;
   loadFromStorage: () => Promise<void>;
@@ -37,7 +40,7 @@ export const useWalletStore = create<WalletState>((set) => ({
   wif: null,
   address: null,
   addressIndex: 0,
-  rpcUrl: 'http://127.0.0.1:38300',
+  rpcUrl: null,
   authToken: undefined,
   extraPeer: undefined,
   balance: null,
@@ -61,7 +64,11 @@ export const useWalletStore = create<WalletState>((set) => ({
   setHistory: (h) => set({ history: h }),
 
   setRpcUrl: (url) => {
-    SecureStore.setItemAsync('rpc_url', url).catch(() => {});
+    if (url && url.trim().length > 0) {
+      SecureStore.setItemAsync('rpc_url', url).catch(() => {});
+    } else {
+      SecureStore.deleteItemAsync('rpc_url').catch(() => {});
+    }
     set({ rpcUrl: url });
   },
 
@@ -89,13 +96,13 @@ export const useWalletStore = create<WalletState>((set) => ({
       set({
         seedHex: seed ?? null,
         wif: wif ?? null,
-        rpcUrl: rpc ?? 'http://127.0.0.1:38300',
+        rpcUrl: rpc ?? null,
         authToken: auth ?? undefined,
         extraPeer: peer ?? undefined,
       });
     } catch {
       // Keychain unavailable (Expo Go first boot, permissions, etc.) — start with safe defaults
-      set({ seedHex: null, wif: null, rpcUrl: 'http://127.0.0.1:38300' });
+      set({ seedHex: null, wif: null, rpcUrl: null });
     }
   },
 

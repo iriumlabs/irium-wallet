@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, StatusBar,
-  TouchableOpacity, Animated, Alert, Pressable, Easing,
+  TouchableOpacity, Animated, Pressable, Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,8 +11,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSettlementStore, SavedAgreement } from '../store/settlement';
+import { useWalletStore } from '../store/wallet';
 import { useNodeStore } from '../store/node';
 import { Colors, Typography, Fonts, GradientColors } from '../components/theme';
+import { ConfirmModal } from '../components/ConfirmModal';
 import type { SettlementStackParams } from '../navigation/SettlementNavigator';
 
 type Nav = NativeStackNavigationProp<SettlementStackParams, 'Hub'>;
@@ -306,6 +308,7 @@ interface TemplateItem {
   subtitle: string;
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
+  disabled?: boolean;
 }
 
 function TemplateCard({ item, index }: { item: TemplateItem; index: number }) {
@@ -325,6 +328,7 @@ function TemplateCard({ item, index }: { item: TemplateItem; index: number }) {
   }, []);
 
   function handlePress() {
+    if (item.disabled) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     item.onPress();
   }
@@ -333,10 +337,11 @@ function TemplateCard({ item, index }: { item: TemplateItem; index: number }) {
     <Animated.View style={{ opacity, transform: [{ translateY: y }, { scale }], marginBottom: 12 }}>
       <Pressable
         onPress={handlePress}
+        disabled={item.disabled}
         onPressIn={() => Animated.spring(scale, { toValue: 0.97, friction: 7, useNativeDriver: true }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1, friction: 5, useNativeDriver: true }).start()}
       >
-        <View style={tplStyles.card}>
+        <View style={[tplStyles.card, item.disabled && { opacity: 0.4 }]}>
           <View style={tplStyles.row}>
             <View style={tplStyles.iconBox}>
               <Ionicons name={item.icon} size={22} color={Colors.primary} />
@@ -397,8 +402,11 @@ const tplStyles = StyleSheet.create({
 export function SettlementHubScreen() {
   const nav = useNavigation<Nav>();
   const { agreements, reset, loadAgreements } = useSettlementStore();
+  const { rpcUrl } = useWalletStore();
+  const nodeRequired = rpcUrl === null;
   const [activeTab, setActiveTab] = useState<HubTab>('templates');
   const [openRowKey, setOpenRowKey] = useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<string | null>(null);
 
   // Top-level screen entrance
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -425,24 +433,28 @@ export function SettlementHubScreen() {
       title: 'OTC Trade',
       subtitle: 'Secure peer-to-peer exchange',
       icon: 'swap-horizontal',
+      disabled: nodeRequired,
       onPress: () => { reset(); nav.push('OtcWizard'); },
     },
     {
       title: 'Freelance Work',
       subtitle: 'Pay when work is delivered',
       icon: 'briefcase-outline',
+      disabled: nodeRequired,
       onPress: () => { reset(); nav.push('FreelanceWizard'); },
     },
     {
       title: 'Milestone Payment',
       subtitle: 'Release funds in stages',
       icon: 'bar-chart-outline',
+      disabled: nodeRequired,
       onPress: () => { reset(); nav.push('MilestoneWizard'); },
     },
     {
       title: 'Deposit Protection',
       subtitle: 'Protect deposits with escrow',
       icon: 'shield-outline',
+      disabled: nodeRequired,
       onPress: () => { reset(); nav.push('DepositWizard'); },
     },
   ];
@@ -474,7 +486,7 @@ export function SettlementHubScreen() {
           {/* Header */}
           <View style={styles.header}>
             <Text style={Typography.h2}>Settlements</Text>
-            <Text style={[Typography.caption, { marginTop: 4 }]}>HTLC-based trustless agreements</Text>
+            <Text style={[Typography.caption, { marginTop: 4 }]}>Trustless agreements on the Irium network</Text>
           </View>
 
           {/* Tab bar */}
@@ -497,6 +509,22 @@ export function SettlementHubScreen() {
           {/* Templates */}
           {activeTab === 'templates' && (
             <View style={{ paddingTop: 4 }}>
+              {nodeRequired && (
+                <View style={styles.gateBanner}>
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={20}
+                    color={Colors.warning}
+                  />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={styles.gateBannerTitle}>Advanced feature</Text>
+                    <Text style={styles.gateBannerBody}>
+                      To use settlement, connect your own Irium node in
+                      Settings → Advanced.
+                    </Text>
+                  </View>
+                </View>
+              )}
               <Text style={[Typography.caption, { marginBottom: 14 }]}>
                 Choose a settlement template to get started.
               </Text>
@@ -525,10 +553,7 @@ export function SettlementHubScreen() {
                     actionLabel="Archive"
                     actionIcon="archive-outline"
                     actionColor="#374151"
-                    onAction={() => Alert.alert('Archive', 'Archive agreement?', [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Archive', style: 'destructive', onPress: () => {} },
-                    ])}
+                    onAction={() => setArchiveTarget(a.id)}
                   >
                     <AgreementCard
                       agreement={a}
@@ -565,6 +590,16 @@ export function SettlementHubScreen() {
           )}
         </ScrollView>
       </Animated.View>
+
+      <ConfirmModal
+        visible={archiveTarget !== null}
+        title="Archive agreement"
+        body="Move this agreement out of your active list."
+        confirmLabel="Archive"
+        destructive
+        onConfirm={() => setArchiveTarget(null)}
+        onCancel={() => setArchiveTarget(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -600,4 +635,27 @@ const styles = StyleSheet.create({
   emptyState: { paddingVertical: 40, alignItems: 'center', gap: 8 },
   emptyText:  { fontSize: 15, fontFamily: Fonts.semiBold, color: Colors.textSecondary },
   emptyHint:  { fontSize: 12, fontFamily: Fonts.regular, color: Colors.textMuted, textAlign: 'center' },
+
+  gateBanner: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+    backgroundColor: Colors.warning + '12',
+    borderWidth: 1,
+    borderColor: Colors.warning + '40',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  gateBannerTitle: {
+    fontSize: 13,
+    fontFamily: Fonts.semiBold,
+    color: Colors.warning,
+  },
+  gateBannerBody: {
+    fontSize: 12,
+    fontFamily: Fonts.regular,
+    color: Colors.textSecondary,
+    lineHeight: 17,
+  },
 });

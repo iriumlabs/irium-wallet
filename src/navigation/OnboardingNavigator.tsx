@@ -5,7 +5,11 @@ import { SecurityNoticeScreen } from '../screens/onboarding/SecurityNoticeScreen
 import { MnemonicScreen } from '../screens/onboarding/MnemonicScreen';
 import { VerifyMnemonicScreen } from '../screens/onboarding/VerifyMnemonicScreen';
 import { ImportWalletScreen } from '../screens/onboarding/ImportWalletScreen';
-import { ConnectingScreen } from '../screens/onboarding/ConnectingScreen';
+// ConnectingScreen removed from the onboarding flow (UX cleanup):
+// the light client starts silently in WalletApp via usePeers() after
+// onboarding completes, so the user no longer waits through a fake
+// "connecting" step. The component file remains in src/screens/onboarding/
+// for now in case any re-enable is needed.
 import { ReadyScreen } from '../screens/onboarding/ReadyScreen';
 import { SecureWalletScreen } from '../screens/onboarding/SecureWalletScreen';
 
@@ -15,7 +19,6 @@ export type OnboardingStackParams = {
   Mnemonic: { mode: 'create' | 'import' };
   VerifyMnemonic: undefined;
   ImportWallet: undefined;
-  Connecting: { mode: 'create' | 'import' };
   SecureWallet: undefined;
   Ready: undefined;
 };
@@ -37,7 +40,6 @@ export function OnboardingNavigator({ onComplete }: { onComplete: () => void }) 
       <Stack.Screen name="Mnemonic"       component={MnemonicScreen} />
       <Stack.Screen name="VerifyMnemonic" component={VerifyMnemonicScreen} />
       <Stack.Screen name="ImportWallet"   component={ImportWalletScreen} />
-      <Stack.Screen name="Connecting"     component={ConnectingScreen} />
       <Stack.Screen name="SecureWallet"   component={SecureWalletScreen} />
       <Stack.Screen name="Ready">
         {(props) => <ReadyScreen {...props} onComplete={onComplete} />}

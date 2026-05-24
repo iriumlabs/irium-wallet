@@ -148,7 +148,7 @@ export function VerifyMnemonicScreen({ navigation }: Props) {
   function onConfirm() {
     setSubmitted(true);
     if (verify()) {
-      navigation.push('Connecting', { mode: 'create' });
+      navigation.push('SecureWallet');
       return;
     }
     // Shake any cards that have a wrong answer

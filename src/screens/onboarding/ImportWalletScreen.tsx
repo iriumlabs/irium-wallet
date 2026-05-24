@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, StatusBar, TextInput, Animated,
-  Pressable, ScrollView, Alert, ActivityIndicator,
+  Pressable, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,6 +13,7 @@ import { StepDots } from '../../components/onboarding/StepDots';
 import { bridge } from '../../bridge';
 import { useWalletStore } from '../../store/wallet';
 import { Colors, Fonts, GradientColors } from '../../components/theme';
+import { useToast } from '../../components/Toast';
 
 type Props = NativeStackScreenProps<OnboardingStackParams, 'ImportWallet'>;
 type Tab = 'phrase' | 'wif' | 'file';
@@ -24,6 +25,7 @@ const TABS: { key: Tab; label: string; icon: keyof typeof import('@expo/vector-i
 ];
 
 export function ImportWalletScreen({ navigation }: Props) {
+  const toast = useToast();
   const { setSeedHex, setWif, setAddress } = useWalletStore();
   const [tab, setTab]         = useState<Tab>('phrase');
   const [phrase, setPhrase]   = useState('');
@@ -49,7 +51,7 @@ export function ImportWalletScreen({ navigation }: Props) {
     const trimmed = phrase.trim();
     const words   = trimmed.split(/\s+/).filter(Boolean);
     if (words.length !== 12 && words.length !== 24) {
-      Alert.alert('Invalid phrase', 'Enter 12 or 24 words.');
+      toast.show('Please enter 12 or 24 words', 'error');
       return;
     }
     setLoading(true);
@@ -60,26 +62,12 @@ export function ImportWalletScreen({ navigation }: Props) {
       await setSeedHex(seed);
       await setWif(wif);
       setAddress(addr);
-      navigation.push('Connecting', { mode: 'import' });
+      navigation.push('SecureWallet');
     } catch (e: any) {
-      Alert.alert('Import failed', e.message ?? 'Could not derive wallet from phrase');
+      toast.show(e?.message ?? 'Could not derive wallet from phrase', 'error');
     } finally {
       setLoading(false);
     }
-  }
-
-  async function importWifKey() {
-    // WIF encodes a single private key. The mobile wallet's store and
-    // BIP32 derivation pipeline assume a seed exists (so further addresses
-    // at index 1, 2, ... can be derived). Faking a seed from WIF bytes
-    // would silently put the user at a different address than the one
-    // they expect — which is exactly the kind of mock-data trap we are
-    // removing in this cleanup. Block the path with a clear message
-    // pointing at the supported flows.
-    Alert.alert(
-      'WIF import not supported',
-      'Single-key (WIF) imports are not yet supported on mobile. Use a 12 or 24-word mnemonic phrase, or restore from a JSON backup file that contains seed_hex.',
-    );
   }
 
   async function pickBackupFile() {
@@ -108,9 +96,9 @@ export function ImportWalletScreen({ navigation }: Props) {
       await setSeedHex(importedSeed);
       await setWif(wif);
       setAddress(addr);
-      navigation.push('Connecting', { mode: 'import' });
+      navigation.push('SecureWallet');
     } catch (e: any) {
-      Alert.alert('Import failed', e?.message ?? 'Could not read or parse file');
+      toast.show(e?.message ?? 'Could not read or parse file', 'error');
       setFilePicked(null);
     } finally {
       setLoading(false);
@@ -188,7 +176,9 @@ export function ImportWalletScreen({ navigation }: Props) {
                 autoCorrect={false}
                 textAlignVertical="top"
               />
-              <Text style={styles.helper}>Imports a single address (#0). Use a seed phrase for full multi-address recovery.</Text>
+              <Text style={[styles.helper, { color: Colors.warning }]}>
+                WIF import is not supported yet. Use your 12 or 24-word recovery phrase instead.
+              </Text>
             </View>
           )}
 
@@ -215,9 +205,9 @@ export function ImportWalletScreen({ navigation }: Props) {
       <View style={styles.footer}>
         {tab !== 'file' && (
           <Pressable
-            onPress={tab === 'phrase' ? importPhrase : importWifKey}
-            disabled={loading}
-            style={({ pressed }) => [styles.gradWrap, { opacity: pressed ? 0.85 : loading ? 0.5 : 1 }]}
+            onPress={tab === 'phrase' ? importPhrase : undefined}
+            disabled={loading || tab === 'wif'}
+            style={({ pressed }) => [styles.gradWrap, { opacity: pressed ? 0.85 : (loading || tab === 'wif') ? 0.5 : 1 }]}
           >
             <LinearGradient colors={GradientColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.gradBtn}>
               {loading ? (

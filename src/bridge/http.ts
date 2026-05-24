@@ -53,7 +53,7 @@ async function fetchWithTimeout(
 }
 
 async function rpcGet<T>(
-  rpcUrl: string,
+  rpcUrl: string | null,
   authToken: string | undefined,
   path: string,
   query?: Record<string, string | number>,
@@ -81,7 +81,7 @@ async function rpcGet<T>(
 }
 
 async function rpcPost<T>(
-  rpcUrl: string,
+  rpcUrl: string | null,
   authToken: string | undefined,
   path: string,
   body: unknown,
@@ -138,9 +138,13 @@ interface RawUtxosResponse {
   }>;
 }
 
+// iriumd /rpc/submit_tx response shape (src/bin/iriumd.rs:647-657).
+// `reason` is populated on every error branch and stripped via
+// `skip_serializing_if = "Option::is_none"` on success.
 interface RawSubmitTxResponse {
   txid?: string;
-  hash?: string;
+  accepted?: boolean;
+  reason?: string;
 }
 
 interface RawFeeEstimate {
@@ -282,7 +286,7 @@ function buildAgreementBody(params: AgreementParams): Record<string, unknown> {
 }
 
 async function submitTxHex(
-  rpcUrl: string,
+  rpcUrl: string | null,
   authToken: string | undefined,
   txHex: string,
 ): Promise<string> {
@@ -290,7 +294,38 @@ async function submitTxHex(
   const json = await rpcPost<RawSubmitTxResponse>(rpcUrl, authToken, '/rpc/submit_tx', {
     tx_hex: txHex,
   });
-  return String(json.txid ?? json.hash ?? '');
+  const txid = String(json.txid ?? '');
+  // iriumd returns { txid, accepted, reason? }. Three cases:
+  //   1. accepted === false AND reason mentions "already" or "mempool"
+  //      → tx is in flight (duplicate / already-known). Soft success:
+  //        log a warning and return the txid iriumd included in the
+  //        409 response. This is the canonical "I already saw this
+  //        broadcast" path; not a real failure.
+  //   2. accepted === false otherwise → real rejection (bad fee,
+  //      decode error, double-spend, signature failure, etc.).
+  //      Throw with the reason string from iriumd.
+  //   3. accepted === true OR undefined (success path; iriumd strips
+  //      the field on success via skip_serializing_if). Return the
+  //      txid if non-empty; throw if empty (would have been a silent
+  //      failure in the old code).
+  if (json.accepted === false) {
+    const reason = json.reason ?? 'no reason given';
+    const reasonLower = reason.toLowerCase();
+    if (reasonLower.includes('already') || reasonLower.includes('mempool')) {
+      console.warn(
+        `[bridge.http] submit_tx soft success — tx already in flight: ${reason} (txid=${txid})`,
+      );
+      return txid;
+    }
+    throw new SpvError('Rpc', `submit_tx rejected: ${reason}`);
+  }
+  if (!txid) {
+    throw new SpvError(
+      'Rpc',
+      `submit_tx returned no txid (reason: ${json.reason ?? 'unknown'})`,
+    );
+  }
+  return txid;
 }
 
 // /rpc/history response shape is not documented in API.md; try common shapes
@@ -314,7 +349,7 @@ function parseHistory(raw: unknown): TxRecord[] {
   return list.map((item: any) => {
     const txid = String(item?.txid ?? item?.hash ?? item?.tx_hash ?? '');
     const height = Number(item?.height ?? item?.block_height ?? 0);
-    const rawNet = item?.net_sats ?? item?.net ?? item?.amount ?? item?.value ?? 0;
+    const rawNet = item?.net ?? item?.amount ?? item?.value ?? 0;
     const net_sats = Number(rawNet);
     let direction: string = item?.direction ?? '';
     if (direction !== 'in' && direction !== 'out') {
