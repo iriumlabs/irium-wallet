@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  StatusBar, Alert, TouchableOpacity, Animated,
+  StatusBar, TouchableOpacity, Animated,
   Modal, TextInput, Pressable,
 } from 'react-native';
 import { useScreenEnter } from '../hooks/useScreenEnter';
@@ -15,6 +15,7 @@ import { loadPreimage } from '../bridge/secret';
 import { GradientButton } from '../components/GradientButton';
 import { Card } from '../components/Card';
 import { Colors, Typography, Fonts } from '../components/theme';
+import { useToast } from '../components/Toast';
 import type { SettlementStackParams } from '../navigation/SettlementNavigator';
 
 type Props = NativeStackScreenProps<SettlementStackParams, 'AgreementDetail'>;
@@ -44,6 +45,7 @@ interface TimelineStep {
 }
 
 export function AgreementDetailScreen({ route, navigation }: Props) {
+  const toast = useToast();
   const { agreementId } = route.params;
   const enterStyle = useScreenEnter();
   const agreements = useSettlementStore((s) => s.agreements);
@@ -94,15 +96,12 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
 
   async function copyHash() {
     await Clipboard.setStringAsync(ag.id);
-    Alert.alert('Copied', 'Agreement hash copied to clipboard');
+    toast.show('Agreement hash copied', 'success');
   }
 
   async function checkEligibility(agreement: typeof ag, branch: 'release' | 'refund') {
     if (!agreement.agreementJson) {
-      Alert.alert(
-        'Cannot check',
-        'This agreement was created before the JSON-saving update; no canonical agreement body to query.',
-      );
+      toast.show('Cannot check — agreement predates JSON-saving', 'error');
       return;
     }
     const fundingTxid = agreement.fundingTxid ?? '';
@@ -110,23 +109,21 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
       const r = branch === 'release'
         ? await bridge.getReleaseEligibility(agreement.agreementJson, fundingTxid)
         : await bridge.getRefundEligibility(agreement.agreementJson, fundingTxid);
-      const headline = r.eligible ? `${branch}: eligible` : `${branch}: NOT eligible`;
-      const body = r.reasons.length > 0
-        ? r.reasons.join('\n')
-        : (r.eligible ? 'No blocking conditions reported by iriumd.' : 'No reasons returned.');
-      Alert.alert(headline, body);
+      const reasons = r.reasons.length > 0 ? r.reasons.join('; ') : '';
+      const msg = `${branch} ${r.eligible ? 'eligible' : 'not eligible'}${reasons ? ' — ' + reasons : ''}`;
+      toast.show(msg, r.eligible ? 'success' : 'info');
     } catch (e: any) {
-      Alert.alert(`${branch} check failed`, e?.message ?? 'Unknown error');
+      toast.show(e?.message ?? `${branch} check failed`, 'error');
     }
   }
 
   async function openReleaseModal(agreement: typeof ag) {
     if (!agreement.agreementJson || !agreement.fundingTxid) {
-      Alert.alert(
-        'Cannot release',
+      toast.show(
         !agreement.agreementJson
-          ? 'No canonical agreement body stored — this agreement predates the JSON-saving update.'
-          : 'Agreement has no funding txid. Fund the agreement first from the wizard or AgreementDetail screen.',
+          ? 'No canonical body stored — agreement predates JSON-saving'
+          : 'Fund the agreement before releasing',
+        'error',
       );
       return;
     }
@@ -139,7 +136,7 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
   async function executeRelease(agreement: typeof ag, secretHex: string) {
     if (!agreement.agreementJson || !agreement.fundingTxid) return;
     if (!/^[0-9a-fA-F]{64}$/.test(secretHex.trim())) {
-      Alert.alert('Invalid secret', 'Secret preimage must be exactly 64 hex characters.');
+      toast.show('Secret preimage must be 64 hex characters', 'error');
       return;
     }
     setActionPending('release');
@@ -151,17 +148,17 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
         true,
       );
       if (!r.accepted) {
-        Alert.alert(
-          'Release not accepted',
-          `iriumd built the release tx but did not accept it.\ntxid: ${r.txid || '<empty>'}`,
+        toast.show(
+          `Release not accepted${r.txid ? ' — txid ' + r.txid.slice(0, 12) + '…' : ''}`,
+          'error',
         );
       } else {
         updateAgreementStatus(agreement.id, 'complete');
-        Alert.alert('Released', `Release tx accepted by iriumd.\ntxid: ${r.txid}`);
+        toast.show(`Released — txid ${r.txid.slice(0, 12)}…`, 'success');
         setSecretModalOpen(false);
       }
     } catch (e: any) {
-      Alert.alert('Release failed', e?.message ?? 'Unknown error');
+      toast.show(e?.message ?? 'Release failed', 'error');
     } finally {
       setActionPending(null);
     }
@@ -169,11 +166,11 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
 
   async function executeRefund(agreement: typeof ag) {
     if (!agreement.agreementJson || !agreement.fundingTxid) {
-      Alert.alert(
-        'Cannot refund',
+      toast.show(
         !agreement.agreementJson
-          ? 'No canonical agreement body stored — this agreement predates the JSON-saving update.'
-          : 'Agreement has no funding txid. Refund requires a funded HTLC to spend.',
+          ? 'No canonical body stored — agreement predates JSON-saving'
+          : 'Refund requires a funded HTLC',
+        'error',
       );
       return;
     }
@@ -185,16 +182,16 @@ export function AgreementDetailScreen({ route, navigation }: Props) {
         true,
       );
       if (!r.accepted) {
-        Alert.alert(
-          'Refund not accepted',
-          `iriumd built the refund tx but did not accept it (likely refund timeout not yet reached).\ntxid: ${r.txid || '<empty>'}`,
+        toast.show(
+          `Refund not accepted${r.txid ? ' — txid ' + r.txid.slice(0, 12) + '…' : ''} (timeout may not be reached)`,
+          'error',
         );
       } else {
         updateAgreementStatus(agreement.id, 'expired');
-        Alert.alert('Refunded', `Refund tx accepted by iriumd.\ntxid: ${r.txid}`);
+        toast.show(`Refunded — txid ${r.txid.slice(0, 12)}…`, 'success');
       }
     } catch (e: any) {
-      Alert.alert('Refund failed', e?.message ?? 'Unknown error');
+      toast.show(e?.message ?? 'Refund failed', 'error');
     } finally {
       setActionPending(null);
     }

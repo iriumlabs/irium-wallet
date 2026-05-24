@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   StatusBar,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Animated,
@@ -30,6 +29,7 @@ import { useWalletStore } from '../store/wallet';
 import { useNodeStore } from '../store/node';
 import { GradientButton } from '../components/GradientButton';
 import { Colors, GradientColors, Typography, Fonts } from '../components/theme';
+import { useToast } from '../components/Toast';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -79,6 +79,7 @@ const confirmRowStyles = StyleSheet.create({
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export function SendScreen() {
+  const toast = useToast();
   const { seedHex, rpcUrl, authToken, address, utxos, balance } = useWalletStore();
   const { feeRate, setFeeRate } = useNodeStore();
 
@@ -170,15 +171,15 @@ export function SendScreen() {
   async function buildTx() {
     const trimmed = toAddress.trim();
     if (!validateAddress(trimmed)) {
-      Alert.alert('Invalid address', 'Enter a valid Irium Q-address');
+      toast.show('Enter a valid Q-address', 'error');
       return;
     }
     if (amountSats <= 0) {
-      Alert.alert('Invalid amount', 'Amount must be greater than zero');
+      toast.show('Amount must be greater than zero', 'error');
       return;
     }
     if (totalSats > maxSats) {
-      Alert.alert('Insufficient funds', `Max available: ${irmStr(maxSats)} IRM`);
+      toast.show(`Insufficient funds — max ${irmStr(maxSats)} IRM`, 'error');
       return;
     }
     if (!seedHex) return;
@@ -186,8 +187,8 @@ export function SendScreen() {
     setLoading(true);
     try {
       const [freshUtxos, freshRate] = await Promise.all([
-        bridge.rpcGetUtxos(rpcUrl, authToken, address ?? ''),
-        bridge.rpcGetFeeRate(rpcUrl, authToken),
+        bridge.rpcGetUtxos(rpcUrl ?? '', authToken, address ?? ''),
+        bridge.rpcGetFeeRate(rpcUrl ?? '', authToken),
       ]);
       setFeeRate(freshRate);
 
@@ -202,7 +203,7 @@ export function SendScreen() {
       setTxHex(hex);
       setStep('confirm');
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to build transaction');
+      toast.show(e?.message ?? 'Failed to build transaction', 'error');
     } finally {
       setLoading(false);
     }
@@ -212,7 +213,7 @@ export function SendScreen() {
     setLoading(true);
     try {
       const id = await bridge.broadcastTx(txHex);
-      await bridge.rpcSubmitTx(rpcUrl, authToken, txHex).catch(() => {});
+      await bridge.rpcSubmitTx(rpcUrl ?? '', authToken, txHex).catch(() => {});
       setTxid(id);
       setStep('done');
       Animated.parallel([
@@ -224,7 +225,7 @@ export function SendScreen() {
         Animated.timing(checkOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
       ]).start();
     } catch (e: any) {
-      Alert.alert('Broadcast failed', e.message ?? 'Unknown error');
+      toast.show(e?.message ?? 'Broadcast failed', 'error');
     } finally {
       setLoading(false);
     }
@@ -241,14 +242,14 @@ export function SendScreen() {
 
   async function copyTxid() {
     await Clipboard.setStringAsync(txid);
-    Alert.alert('Copied', 'Transaction ID copied to clipboard');
+    toast.show('Transaction ID copied', 'success');
   }
 
   async function scanQr() {
     if (!cameraPermission?.granted) {
       const result = await requestCameraPermission();
       if (!result.granted) {
-        Alert.alert('Permission required', 'Camera permission is needed to scan QR codes');
+        toast.show('Camera permission required to scan', 'error');
         return;
       }
     }

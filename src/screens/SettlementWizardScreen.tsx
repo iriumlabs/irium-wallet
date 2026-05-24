@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  TouchableOpacity, StatusBar, Alert,
+  TouchableOpacity, StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,6 +12,7 @@ import { useSettlementStore, SettlementTemplate } from '../store/settlement';
 import { GradientButton } from '../components/GradientButton';
 import { Card } from '../components/Card';
 import { Colors, GradientColors, Typography } from '../components/theme';
+import { useToast } from '../components/Toast';
 
 const TEMPLATES: { id: SettlementTemplate; title: string; desc: string }[] = [
   { id: 'simple-settlement', title: 'Freelance', desc: 'Pay for work — payer locks funds, released on delivery' },
@@ -21,6 +22,7 @@ const TEMPLATES: { id: SettlementTemplate; title: string; desc: string }[] = [
 function formatIrm(sats: number) { return (sats / 1e8).toFixed(8) + ' IRM'; }
 
 export function SettlementWizardScreen() {
+  const toast = useToast();
   const { seedHex, rpcUrl, authToken } = useWalletStore();
   const { feeRate } = useNodeStore();
   const store = useSettlementStore();
@@ -100,7 +102,7 @@ export function SettlementWizardScreen() {
             label="Review agreement"
             onPress={async () => {
               if (!store.payerAddress || !store.payeeAddress || !store.amountSats || !store.timeoutHeight || !store.secretHashHex) {
-                Alert.alert('Incomplete', 'Fill in all required fields');
+                toast.show('Fill in all required fields', 'error');
                 return;
               }
               setLoading(true);
@@ -126,7 +128,7 @@ export function SettlementWizardScreen() {
                 store.setField('htlcScriptHex', script);
                 store.setStep('review');
               } catch (e: any) {
-                Alert.alert('Error', e.message ?? 'Failed to create agreement');
+                toast.show(e?.message ?? 'Failed to create agreement', 'error');
               } finally {
                 setLoading(false);
               }
@@ -180,17 +182,17 @@ export function SettlementWizardScreen() {
       setLoading(true);
       try {
         const myAddr = await bridge.deriveAddress(seedHex, 0);
-        const utxos = await bridge.rpcGetUtxos(rpcUrl, authToken, myAddr);
+        const utxos = await bridge.rpcGetUtxos(rpcUrl ?? '', authToken, myAddr);
         const feeSats = feeRate * 300;
         const txHex = await bridge.buildSendTx(
           utxos, store.payerAddress, store.amountSats, feeSats, seedHex, 0,
         );
         const txid = await bridge.broadcastTx(txHex);
-        await bridge.rpcSubmitTx(rpcUrl, authToken, txHex).catch(() => {});
+        await bridge.rpcSubmitTx(rpcUrl ?? '', authToken, txHex).catch(() => {});
         store.setField('fundingTxid', txid);
         store.setStep('status');
       } catch (e: any) {
-        Alert.alert('Error', e.message ?? 'Funding failed');
+        toast.show(e?.message ?? 'Funding failed', 'error');
       } finally {
         setLoading(false);
       }

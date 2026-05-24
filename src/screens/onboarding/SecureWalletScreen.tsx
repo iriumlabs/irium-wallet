@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, StatusBar, Pressable, Animated,
-  TextInput, Alert,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParams } from '../../navigation/OnboardingNavigator';
 import { Colors, Fonts, GradientColors } from '../../components/theme';
+import { useToast } from '../../components/Toast';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DeepSpaceBg } from '../../components/onboarding/DeepSpaceBg';
 import { StepDots } from '../../components/onboarding/StepDots';
@@ -22,6 +23,7 @@ type Props = NativeStackScreenProps<OnboardingStackParams, 'SecureWallet'>;
 type PinStep = 'method' | 'pin_enter' | 'pin_confirm';
 
 export function SecureWalletScreen({ navigation }: Props) {
+  const toast = useToast();
   const goNext = () => navigation.push('Ready');
   const [step, setStep]           = useState<PinStep>('method');
   const [pin, setPin]             = useState('');
@@ -47,7 +49,7 @@ export function SecureWalletScreen({ navigation }: Props) {
       await SecureStore.setItemAsync(AUTH_METHOD_KEY, 'biometric');
       goNext();
     } else {
-      Alert.alert('Failed', 'Authentication failed. Please choose another method.');
+      toast.show('Authentication failed — try another method', 'error');
     }
   }
 
@@ -65,14 +67,14 @@ export function SecureWalletScreen({ navigation }: Props) {
   async function submitPin() {
     if (step === 'pin_enter') {
       if (pin.length < 4) {
-        Alert.alert('Too short', 'PIN must be at least 4 digits');
+        toast.show('PIN must be at least 4 digits', 'error');
         return;
       }
       setStep('pin_confirm');
       return;
     }
     if (confirmPin !== pin) {
-      Alert.alert('Mismatch', 'PINs do not match');
+      toast.show('PINs do not match', 'error');
       setConfirmPin('');
       return;
     }

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  StatusBar, Alert, TouchableOpacity, ActivityIndicator, Animated,
+  StatusBar, TouchableOpacity, ActivityIndicator, Animated,
 } from 'react-native';
 import { useScreenEnter } from '../hooks/useScreenEnter';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { useSettlementStore, SavedAgreement } from '../store/settlement';
 import { GradientButton } from '../components/GradientButton';
 import { Card } from '../components/Card';
 import { Colors, Typography, Fonts } from '../components/theme';
+import { useToast } from '../components/Toast';
 import type { SettlementStackParams } from '../navigation/SettlementNavigator';
 
 type Nav = NativeStackNavigationProp<SettlementStackParams, 'OtcWizard'>;
@@ -27,6 +28,7 @@ type Step = 1 | 2 | 3 | 4 | 5;
 function irmStr(sats: number) { return (sats / 1e8).toFixed(8); }
 
 export function OtcWizardScreen() {
+  const toast = useToast();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteParams>();
   const prefill = route.params?.prefill;
@@ -84,9 +86,9 @@ export function OtcWizardScreen() {
 
   async function proceedToStep3() {
     if (!counterpartyAddr || !bridge.validateAddress(counterpartyAddr.trim())) {
-      Alert.alert('Invalid address', 'Enter a valid Q-address for the counterparty'); return;
+      toast.show('Enter a valid Q-address for the counterparty', 'error'); return;
     }
-    if (amountSats <= 0) { Alert.alert('Invalid amount', 'Enter a positive amount'); return; }
+    if (amountSats <= 0) { toast.show('Enter a positive amount', 'error'); return; }
     if (!seedHex) return;
 
     setStep(3);
@@ -104,7 +106,7 @@ export function OtcWizardScreen() {
       );
       setHtlcScriptHex(script);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to generate secret hash');
+      toast.show(e?.message ?? 'Failed to generate secret hash', 'error');
       setStep(2);
     } finally {
       setGeneratingHash(false);
@@ -151,7 +153,7 @@ export function OtcWizardScreen() {
       addAgreement(saved);
       setStep(5);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to create agreement');
+      toast.show(e?.message ?? 'Failed to create agreement', 'error');
     } finally {
       setLoading(false);
     }

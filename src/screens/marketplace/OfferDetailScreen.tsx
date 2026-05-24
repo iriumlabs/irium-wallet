@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, StatusBar,
-  Pressable, Animated, Alert,
+  Pressable, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +15,7 @@ import { MarketplaceStackParams } from '../../navigation/MarketplaceNavigator';
 import type { MainTabParams } from '../../navigation/MainNavigator';
 import { useNodeStore } from '../../store/node';
 import { Colors, Fonts, GradientColors } from '../../components/theme';
+import { useToast } from '../../components/Toast';
 
 type Props = NativeStackScreenProps<MarketplaceStackParams, 'OfferDetail'>;
 
@@ -45,6 +46,7 @@ function blocksToTime(blocks: number) {
 }
 
 export function OfferDetailScreen({ route }: Props) {
+  const toast = useToast();
   const nav = useNavigation<RootNav>();
   const { nodeStatus } = useNodeStore();
   const offer = route.params.offer;
@@ -78,12 +80,12 @@ export function OfferDetailScreen({ route }: Props) {
   async function copySeller() {
     await Clipboard.setStringAsync(offer.seller_address);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert('Copied', 'Seller address copied');
+    toast.show('Seller address copied', 'success');
   }
 
   function takeOffer() {
     if (offer.status !== 'open' || expired) {
-      Alert.alert('Unavailable', 'This offer is no longer open.');
+      toast.show('This offer is no longer open', 'error');
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

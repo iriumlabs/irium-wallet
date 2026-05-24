@@ -1,7 +1,8 @@
 import React, { useCallback } from 'react';
-import { Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { Text, TouchableOpacity, StyleSheet } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Colors } from './theme';
+import { useToast } from './Toast';
 
 interface Props {
   address: string;
@@ -14,10 +15,11 @@ function truncateAddr(addr: string): string {
 }
 
 export function AddressText({ address, truncate = true }: Props) {
+  const toast = useToast();
   const copy = useCallback(async () => {
     await Clipboard.setStringAsync(address);
-    Alert.alert('Copied', 'Address copied to clipboard');
-  }, [address]);
+    toast.show('Address copied', 'success');
+  }, [address, toast]);
 
   return (
     <TouchableOpacity onPress={copy} activeOpacity={0.7}>

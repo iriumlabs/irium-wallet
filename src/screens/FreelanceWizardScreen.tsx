@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  StatusBar, Alert, TouchableOpacity, Animated,
+  StatusBar, TouchableOpacity, Animated,
 } from 'react-native';
 import { useScreenEnter } from '../hooks/useScreenEnter';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ import { useSettlementStore, SavedAgreement } from '../store/settlement';
 import { GradientButton } from '../components/GradientButton';
 import { Card } from '../components/Card';
 import { Colors, Typography, Fonts } from '../components/theme';
+import { useToast } from '../components/Toast';
 import type { SettlementStackParams } from '../navigation/SettlementNavigator';
 
 type Nav = NativeStackNavigationProp<SettlementStackParams, 'FreelanceWizard'>;
@@ -25,6 +26,7 @@ type Step = 1 | 2 | 3 | 4;
 function irmStr(sats: number) { return (sats / 1e8).toFixed(8); }
 
 export function FreelanceWizardScreen() {
+  const toast = useToast();
   const nav = useNavigation<Nav>();
   const enterStyle = useScreenEnter();
   const { seedHex, address } = useWalletStore();
@@ -62,10 +64,10 @@ export function FreelanceWizardScreen() {
 
   async function proceedToStep3() {
     if (!counterpartyAddr || !bridge.validateAddress(counterpartyAddr.trim())) {
-      Alert.alert('Invalid address', 'Enter a valid Q-address'); return;
+      toast.show('Enter a valid Q-address', 'error'); return;
     }
-    if (amountSats <= 0) { Alert.alert('Invalid amount', 'Enter a positive amount'); return; }
-    if (!workDescription.trim()) { Alert.alert('Required', 'Enter a work description'); return; }
+    if (amountSats <= 0) { toast.show('Enter a positive amount', 'error'); return; }
+    if (!workDescription.trim()) { toast.show('Enter a work description', 'error'); return; }
     if (!seedHex) return;
 
     setLoading(true);
@@ -83,7 +85,7 @@ export function FreelanceWizardScreen() {
       setHtlcScriptHex(script);
       setStep(3);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed');
+      toast.show(e?.message ?? 'Failed to prepare agreement', 'error');
     } finally {
       setLoading(false);
     }
@@ -130,7 +132,7 @@ export function FreelanceWizardScreen() {
       addAgreement(saved);
       setStep(4);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed');
+      toast.show(e?.message ?? 'Failed to create agreement', 'error');
     } finally {
       setLoading(false);
     }

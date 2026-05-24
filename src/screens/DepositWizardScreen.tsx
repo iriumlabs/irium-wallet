@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView,
-  StatusBar, Alert, TouchableOpacity, Animated,
+  StatusBar, TouchableOpacity, Animated,
 } from 'react-native';
 import { useScreenEnter } from '../hooks/useScreenEnter';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ import { useSettlementStore, SavedAgreement } from '../store/settlement';
 import { GradientButton } from '../components/GradientButton';
 import { Card } from '../components/Card';
 import { Colors, Typography, Fonts } from '../components/theme';
+import { useToast } from '../components/Toast';
 import type { SettlementStackParams } from '../navigation/SettlementNavigator';
 
 type Nav = NativeStackNavigationProp<SettlementStackParams, 'DepositWizard'>;
@@ -25,6 +26,7 @@ type Step = 1 | 2 | 3 | 4;
 function irmStr(sats: number) { return (sats / 1e8).toFixed(8); }
 
 export function DepositWizardScreen() {
+  const toast = useToast();
   const nav = useNavigation<Nav>();
   const enterStyle = useScreenEnter();
   const { seedHex, address } = useWalletStore();
@@ -58,23 +60,23 @@ export function DepositWizardScreen() {
 
   function validateStep2(): boolean {
     if (!purpose.trim()) {
-      Alert.alert('Required', 'Enter the deposit purpose'); return false;
+      toast.show('Enter the deposit purpose', 'error'); return false;
     }
     if (amountSats <= 0) {
-      Alert.alert('Invalid amount', 'Enter a positive amount'); return false;
+      toast.show('Enter a positive amount', 'error'); return false;
     }
     if (!holdPeriod.trim() || isNaN(timeoutHeight) || timeoutHeight <= (nodeStatus?.height ?? 0)) {
-      Alert.alert('Required', 'Enter a valid future block height for the unlock'); return false;
+      toast.show('Enter a valid future block height', 'error'); return false;
     }
     if (!returnConditions.trim()) {
-      Alert.alert('Required', 'Enter the conditions for returning the deposit'); return false;
+      toast.show('Enter the return conditions', 'error'); return false;
     }
     if (!counterpartyAddr || !bridge.validateAddress(counterpartyAddr.trim())) {
-      Alert.alert(
-        'Required',
+      toast.show(
         role === 'depositor'
           ? "Enter the recipient's Q-address"
           : "Enter the depositor's Q-address",
+        'error',
       );
       return false;
     }
@@ -122,7 +124,7 @@ export function DepositWizardScreen() {
       addAgreement(saved);
       setStep(4);
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Failed to create agreement');
+      toast.show(e?.message ?? 'Failed to create agreement', 'error');
     } finally {
       setLoading(false);
     }
